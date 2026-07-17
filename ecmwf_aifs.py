@@ -32,7 +32,7 @@ def verifica_dati_nuovi(hourly_data: dict) -> bool:
     return is_nuovo
 
 def main():
-    print("Scaricamento dati ECMWF AIFS a 16 giorni in corso...")
+    print("Scaricamento dati ECMWF AIFS a 14 giorni in corso...")
     
     URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
     
@@ -56,7 +56,7 @@ def main():
         "hourly": ",".join(var_list),
         "models": "ecmwf_aifs025_ensemble_mean",
         "timezone": "Europe/Rome",
-        "forecast_days": 16
+        "forecast_days": 14
     }
     headers = {"User-Agent": "MeteoBot-AIFS/1.0"}
 
