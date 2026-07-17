@@ -2,8 +2,8 @@ name: Invio Grafico Qualità Aria
 
 on:
   schedule:
-    # Esegue al minuto 55 ogni 2 ore, ben sfalsato dagli altri workflow meteo
-    - cron: '55 */2 * * *'
+    # Gira alle 12:33, 13:33 e 14:33 italiane (10:33, 11:33 e 12:33 UTC)
+    - cron: '33 10-12 * * *'
   workflow_dispatch:
 
 jobs:
