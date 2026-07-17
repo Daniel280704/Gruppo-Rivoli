@@ -142,7 +142,7 @@ def main():
         else:
             ax.legend(loc='upper right', fontsize=9, ncol=2 if config.get("has_dew") else 1)
 
-    axs[-1].set_xlabel("Analisi ECMWF AIFS (16 Giorni)   |   Data e Ora (Fuso Orario Locale)", fontsize=13, fontweight='bold', labelpad=15)
+    axs[-1].set_xlabel("Analisi ECMWF AIFS (14 Giorni)   |   Data e Ora (Fuso Orario Locale)", fontsize=13, fontweight='bold', labelpad=15)
     axs[-1].xaxis.set_major_locator(mdates.DayLocator())
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
     axs[-1].xaxis.set_minor_locator(mdates.HourLocator(byhour=[12]))
