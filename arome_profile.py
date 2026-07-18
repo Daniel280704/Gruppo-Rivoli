@@ -28,12 +28,14 @@ def verifica_dati_nuovi(hourly_data: dict) -> bool:
     # Estraiamo TUTTI i dati reali, scartando i "vuoti" (None) alla fine dell'array
     valid_temp = [x for x in temp if x is not None]
     
-    # AROME a 2 giorni dovrebbe avere 48 ore. Usiamo 45 come margine di sicurezza.
-    if len(valid_temp) < 45:
-        print(f"⏳ Dati insufficienti (ore valide: {len(valid_temp)}/48). Attendo run...")
+    # AROME può arrivare a 51 ore di forecast (52 elementi orari).
+    # Usiamo 48 come margine di sicurezza minimo per validare un run completato.
+    if len(valid_temp) < 48:
+        print(f"⏳ Dati insufficienti (ore valide: {len(valid_temp)}/~51). Attendo run...")
         return False
         
-    # Calcoliamo l'hash sull'INTERO blocco di dati validi
+    # Calcoliamo l'hash sull'INTERO blocco di dati validi, per cui se il run 
+    # di colpo aggiunge ore da 48 a 51, l'hash cambia e rigenera l'immagine.
     hash_attuale = hashlib.md5(str(valid_temp).encode('utf-8')).hexdigest()
     
     if not os.path.exists(FILE_HASH):
@@ -69,9 +71,9 @@ def fetch_dati_con_retry() -> dict:
         "hourly": ",".join(var_list),
         "models": "meteofrance_arome_france",
         "timezone": "Europe/Rome",
-        "forecast_days": 2
+        "forecast_days": 3 # Richiediamo 72h, poi lo script taglierà i vuoti in automatico
     }
-    headers = {"User-Agent": "MeteoBot-AROME/1.1"}
+    headers = {"User-Agent": "MeteoBot-AROME/1.2"}
 
     for tentativo in range(3):
         try:
@@ -85,7 +87,7 @@ def fetch_dati_con_retry() -> dict:
     return {}
 
 def main():
-    print("Scaricamento dati AROME Deterministico (2 Giorni)...")
+    print("Scaricamento dati AROME Deterministico (fino a 51 ore)...")
     
     hourly = fetch_dati_con_retry()
     
@@ -96,13 +98,19 @@ def main():
     if not verifica_dati_nuovi(hourly):
         sys.exit(0)
         
-    print("ℹ️ Dati AROME pronti e aggiornati. Generazione del grafico...")
-    times = pd.to_datetime(hourly.get("time"))
+    # Calcolo dinamico della lunghezza effettiva del run (per tagliare i None finali)
+    valid_len = len([x for x in hourly.get("temperature_2m", []) if x is not None])
+    
+    print(f"ℹ️ Dati AROME aggiornati (Trovate {valid_len - 1} ore di previsione valide). Generazione grafico...")
+    
+    # Tagliamo l'asse temporale esattamente dove finiscono i dati
+    times = pd.to_datetime(hourly.get("time"))[:valid_len]
 
     def get_arr(var_name):
         data = hourly.get(var_name)
         if not data: return None
-        return np.array([np.nan if v is None else v for v in data], dtype=float)
+        # Tagliamo l'array dei dati alla stessa lunghezza dinamica
+        return np.array([np.nan if v is None else v for v in data[:valid_len]], dtype=float)
 
     # Layout con 5 grafici
     fig, axs = plt.subplots(5, 1, figsize=(14, 25), sharex=True)
@@ -204,7 +212,6 @@ def main():
     gust = get_arr("wind_gusts_10m")
     
     if gust is not None:
-        # Mantenuta solo la curva, rimosso il riempimento (fill_between)
         ax4.plot(times, gust, color="#e377c2", linewidth=2.5, label='Raffiche di Vento (km/h)')
         ax4.set_ylim(bottom=0, top=max(np.nanmax(gust) * 1.2, 10.0))
 
@@ -229,8 +236,8 @@ def main():
     ax5.legend(loc='upper left', fontsize=10)
     ax5.set_title("Accumulo Orario Precipitazioni", fontsize=13, fontweight='bold')
 
-    # Formattazione Asse X Finale (ogni 6 ore)
-    titolo_in_basso = "Modello MeteoFrance AROME (48h)   |   Data e Ora (Fuso Orario Locale)"
+    # Formattazione Asse X Finale (ogni 6 ore) - Didascalia dinamica
+    titolo_in_basso = f"Modello MeteoFrance AROME ({valid_len - 1}h)   |   Data e Ora (Fuso Orario Locale)"
     axs[-1].set_xlabel(titolo_in_basso, fontsize=12, fontweight='bold', labelpad=15)
     axs[-1].xaxis.set_major_locator(mdates.HourLocator(interval=6))
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter('%H:00\n%d %b'))
