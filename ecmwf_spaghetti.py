@@ -271,18 +271,11 @@ def main():
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
         ora_esecuzione = datetime.now().strftime("%d/%m/%Y alle %H:%M")
 
-        caption = (
-            "🍝 <b>Meteogramma Spaghetti ECMWF IFS (14 Giorni)</b>\n"
-            "• <b>850 & 500 hPa:</b> Temp (alto, continua) e Geopotenziale (basso, tratteggiata).\n"
-            "• <b>Precipitazioni:</b> Accumulo giornaliero. Le barre indicano la media, i puntini mostrano la dispersione dei 51 scenari.\n\n"
-            f"<i>Aggiornato il {ora_esecuzione}</i>"
-        )
-
         try:
             with open(FILENAME, "rb") as photo:
                 res = requests.post(
                     url_telegram,
-                    data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
+                    data={"chat_id": chat_id, "parse_mode": "HTML"},
                     files={"photo": photo}
                 )
 
