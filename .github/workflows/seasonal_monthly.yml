@@ -2,8 +2,8 @@ name: Invio Anomalie Mensili (217 Giorni)
 
 on:
   schedule:
-    # Corre ai minuti 21 delle ore 12, 14, 16, 18 (UTC) SOLAMENTE il giorno 1 di ogni mese
-    - cron: '21 12,14,16,18 1 * *'
+    # Esegue il giorno 6 di ogni mese, alle 14:13, 16:13 e 18:13 UTC
+    - cron: '13 14,16,18 6 * *'
   workflow_dispatch:
 
 jobs:
