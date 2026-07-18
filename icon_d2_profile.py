@@ -279,7 +279,7 @@ def main():
     # --- INVIO A TELEGRAM (SILENZIOSO SE FALLISCE) ---
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    thread_id = os.getenv("TELEGRAM_THREAD_ID_ICOND2") # Variabile d'ambiente opzionale per la stanza
+    thread_id = os.getenv("TELEGRAM_THREAD_ID_HD") # Stanza Alta Risoluzione HD
     
     if token and chat_id:
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
