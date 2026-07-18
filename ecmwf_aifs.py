@@ -195,8 +195,10 @@ def main():
     if token and chat_id:
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
         
-        # Prepara il pacchetto dati senza la caption
-        payload = {"chat_id": chat_id}
+        payload = {
+            "chat_id": chat_id,
+            "caption": "ECMWF AIFS (mean + spread)"
+        }
         
         # Se c'è l'ID della stanza, lo aggiunge
         if thread_id:
