@@ -41,4 +41,5 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add ultimo_hash_icon_2i.txt || true
           git commit -m "Aggiornamento hash dati unificato ICON-2I [skip ci]" || echo "Nessun nuovo run ICON-2I"
+          git pull --rebase origin main
           git push
