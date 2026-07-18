@@ -70,7 +70,7 @@ def verifica_dati_nuovi(hourly_data: dict) -> bool:
         return False
 
 def main():
-    print("Scaricamento dati ECMWF (Umidità e Geopotenziale) a 14 giorni in corso...")
+    print("Scaricamento dati ECMWF (Umidità e Geopotenziale) a 7 giorni in corso...")
     
     URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
     
@@ -87,9 +87,9 @@ def main():
         "hourly": ",".join(hourly_vars),
         "models": "ecmwf_ifs025_ensemble_mean",
         "timezone": "Europe/Rome",
-        "forecast_days": 14
+        "forecast_days": 7
     }
-    headers = {"User-Agent": "MeteoBot-ECMWF-RH-Z/1.0"}
+    headers = {"User-Agent": "MeteoBot-ECMWF-RH-Z/1.1"}
 
     try:
         response = requests.get(URL, params=params, headers=headers)
@@ -128,26 +128,22 @@ def main():
     # Creazione della matrice 9 righe x 1 colonna (Grafico molto alto per non schiacciare le righe)
     fig, axs = plt.subplots(9, 1, figsize=(14, 30), sharex=True)
 
-    def applica_spaziatura_asimmetrica(ax_rh, ax_z, rh_arr, z_arr):
-        """Umidità (RH) nel 45% superiore, Geopotenziale (Z) nel 45% inferiore."""
+    def applica_spaziatura_asimmetrica(ax_rh, ax_z, z_arr):
+        """Umidità fissa 0-100 nel 45% superiore. Geopotenziale dinamico nel 45% inferiore."""
         
-        # 1. Spaziatura Asse Umidità (Superiore)
-        if rh_arr is not None and len(rh_arr) > 0 and not np.isnan(rh_arr).all():
-            rh_min, rh_max = np.nanmin(rh_arr), np.nanmax(rh_arr)
-            # Forza l'umidità nei limiti fisici (0-100) per chiarezza visiva se necessario, 
-            # ma basiamo il range sui dati reali per enfatizzare le variazioni
-            r_rh = rh_max - rh_min if (rh_max - rh_min) > 0 else 20.0
-            limite_alto_rh = rh_max + 0.05 * r_rh
-            # Il limite basso scende molto oltre i dati per "schiacciare" la linea verso l'alto
-            limite_basso_rh = limite_alto_rh - (r_rh / 0.45)
-            ax_rh.set_ylim(limite_basso_rh, limite_alto_rh)
+        # 1. Spaziatura Asse Umidità (Superiore, range fisso 0-100)
+        # Se 100 unità devono occupare il 45% dello spazio, lo spazio totale è 100 / 0.45 = 222.22
+        # Il limite alto è 100. Il limite basso è 100 - 222.22 = -122.22
+        ax_rh.set_ylim(100 - (100 / 0.45), 100)
+        # Mostriamo SOLO i numeri e la griglia per i valori tra 0 e 100
+        ax_rh.set_yticks([0, 25, 50, 75, 100])
 
-        # 2. Spaziatura Asse Geopotenziale (Inferiore)
+        # 2. Spaziatura Asse Geopotenziale (Inferiore, dinamico sui dati reali)
         if z_arr is not None and len(z_arr) > 0 and not np.isnan(z_arr).all():
             z_min, z_max = np.nanmin(z_arr), np.nanmax(z_arr)
             r_z = z_max - z_min if (z_max - z_min) > 0 else 50.0
             limite_basso_z = z_min - 0.05 * r_z
-            # Il limite alto sale molto oltre i dati per "schiacciare" la linea verso il basso
+            # Il limite alto sale molto oltre i dati per "schiacciare" la curva verso il basso
             limite_alto_z = limite_basso_z + (r_z / 0.45)
             ax_z.set_ylim(limite_basso_z, limite_alto_z)
 
@@ -163,18 +159,16 @@ def main():
         rh_arr = np.array(rh_raw, dtype=float) if rh_raw else None
         z_arr = np.array(z_raw, dtype=float) if z_raw else None
         
-        # Plot Umidità (Asse Sinistro - Linea Continua)
+        # Plot Umidità (Asse Sinistro - Linea Continua SENZA riempimento)
         if rh_arr is not None:
             ax.plot(times, rh_arr, color="#1f77b4", linewidth=2.5, linestyle='-', label=f"Umidità Rel. (%)")
-            # Leggero riempimento azzurro sotto la linea di umidità per renderla più "pesante" visivamente
-            ax.fill_between(times, rh_arr, np.nanmin(rh_arr), color="#1f77b4", alpha=0.15)
             
         # Plot Geopotenziale (Asse Destro - Linea Tratteggiata e Colorata per Livello)
         if z_arr is not None:
             ax_z.plot(times, z_arr, color=color, linewidth=2.5, linestyle='--', label=f"Geopotenziale {lvl}")
 
-        # Applica il trucco matematico del 45% - 10% - 45%
-        applica_spaziatura_asimmetrica(ax, ax_z, rh_arr, z_arr)
+        # Applica la spaziatura con i calcoli del 45%
+        applica_spaziatura_asimmetrica(ax, ax_z, z_arr)
         
         # Formattazione Asse Sinistro (RH)
         ax.set_ylabel("Umid. %", fontsize=11, color="#1f77b4", fontweight='bold')
@@ -194,7 +188,7 @@ def main():
         ax.set_title(f"Sezione {lvl}", fontsize=12, fontweight='bold', loc='right')
 
     # Formattazione Asse X Finale
-    titolo_in_basso = "ECMWF Ensemble Mean - Colonna Atmosferica: Umidità vs Geopotenziale (14 Giorni)"
+    titolo_in_basso = "ECMWF Ensemble Mean - Colonna Atmosferica: Umidità vs Geopotenziale (7 Giorni)"
     axs[-1].set_xlabel(titolo_in_basso, fontsize=14, fontweight='bold', labelpad=15)
 
     axs[-1].xaxis.set_major_locator(mdates.DayLocator())
