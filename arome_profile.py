@@ -71,7 +71,7 @@ def fetch_dati_con_retry() -> dict:
         "timezone": "Europe/Rome",
         "forecast_days": 2
     }
-    headers = {"User-Agent": "MeteoBot-AROME/1.0"}
+    headers = {"User-Agent": "MeteoBot-AROME/1.1"}
 
     for tentativo in range(3):
         try:
@@ -204,8 +204,8 @@ def main():
     gust = get_arr("wind_gusts_10m")
     
     if gust is not None:
+        # Mantenuta solo la curva, rimosso il riempimento (fill_between)
         ax4.plot(times, gust, color="#e377c2", linewidth=2.5, label='Raffiche di Vento (km/h)')
-        ax4.fill_between(times, 0, gust, color="#e377c2", alpha=0.3)
         ax4.set_ylim(bottom=0, top=max(np.nanmax(gust) * 1.2, 10.0))
 
     ax4.set_ylabel("Raffiche (km/h)", fontsize=11, color="#e377c2", fontweight='bold')
