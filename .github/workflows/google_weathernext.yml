@@ -40,4 +40,5 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add ultimo_hash_google_weathernext.txt || true
           git commit -m "Aggiornamento hash dati Google WNX2 [skip ci]" || echo "Nessun nuovo run Google"
+          git pull --rebase origin main
           git push
