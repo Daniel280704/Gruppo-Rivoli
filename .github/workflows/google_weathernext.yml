@@ -2,8 +2,8 @@ name: Invio Grafico Profilo Google WeatherNext 2
 
 on:
   schedule:
-    # Esegue al minuto 35 ogni 2 ore
-    - cron: '35 */2 * * *'
+    # Esegue al minuto 35 ogni 3 ore
+    - cron: '35 */3 * * *'
   
   workflow_dispatch:
 
