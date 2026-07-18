@@ -194,8 +194,10 @@ def main():
         print("Invio grafico su Telegram in corso...")
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
         
-        # Payload totalmente privo di caption come richiesto
-        payload = {"chat_id": chat_id}
+        payload = {
+            "chat_id": chat_id,
+            "caption": "(mean + spread)"
+        }
         
         if thread_id:
             payload["message_thread_id"] = thread_id
