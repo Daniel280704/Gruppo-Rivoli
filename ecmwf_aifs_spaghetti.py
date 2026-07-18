@@ -280,8 +280,7 @@ def main():
         ora_esecuzione = datetime.now().strftime("%d/%m/%Y alle %H:%M")
 
         payload = {
-            "chat_id": chat_id, 
-            "caption": caption, 
+            "chat_id": chat_id,  
             "parse_mode": "HTML"
         }
         
