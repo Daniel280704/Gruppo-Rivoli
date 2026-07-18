@@ -20,35 +20,20 @@ FILE_HASH = "ultimo_hash_ecmwf_spaghetti.txt"
 FILENAME = "ecmwf_spaghetti_profile.png"
 
 def verifica_dati_nuovi(hourly_data: dict) -> bool:
-    """Verifica dinamicamente se il primo e l'ultimo membro dell'ensemble sono stati aggiornati completando il run."""
+    """Verifica se SIA il primo membro (01) SIA l'ultimo membro (51) sono stati aggiornati fino all'ultimo giorno."""
     
-    # Troviamo dinamicamente tutte le chiavi dei membri
-    member_keys = sorted([k for k in hourly_data.keys() if k.startswith("temperature_850hPa_member")])
+    member_first = hourly_data.get("temperature_850hPa_member01", [])
+    member_last = hourly_data.get("temperature_850hPa_member51", [])
     
-    if not member_keys:
-        print("⚠️ Errore: Nessun membro Ensemble trovato nei dati scaricati.")
+    # Sicurezza: controlliamo che ci siano dati sufficienti prima di "tagliare" l'array
+    if not member_first or not member_last or len(member_first) < 24:
         return False
         
-    first_key = member_keys[0]
-    last_key = member_keys[-1]
+    # IL TRUCCO: Estraiamo solo le ultime 24 ore del periodo di previsione
+    ultime_24h_first = member_first[-24:]
+    ultime_24h_last = member_last[-24:]
     
-    member_first = hourly_data.get(first_key, [])
-    member_last = hourly_data.get(last_key, [])
-    
-    # Filtriamo i None: se il run API è in corso, le ultime ore nel JSON potrebbero essere vuote
-    valid_first = [x for x in member_first if x is not None]
-    valid_last = [x for x in member_last if x is not None]
-    
-    # Sicurezza: controlliamo di avere almeno 24 ore di dati calcolati
-    if len(valid_first) < 24 or len(valid_last) < 24:
-        print(f"⏳ Run in elaborazione (ore valide calcolate: {len(valid_first)}). Attendo...")
-        return False
-        
-    # Estraiamo solo le ultime 24 ore "reali" del periodo di previsione
-    ultime_24h_first = valid_first[-24:]
-    ultime_24h_last = valid_last[-24:]
-    
-    # Calcoliamo i due hash sulla "coda" del run
+    # Calcoliamo i due hash solo sulla "coda" del run
     hash_first_attuale = hashlib.md5(str(ultime_24h_first).encode('utf-8')).hexdigest()
     hash_last_attuale = hashlib.md5(str(ultime_24h_last).encode('utf-8')).hexdigest()
     
@@ -83,14 +68,15 @@ def verifica_dati_nuovi(hourly_data: dict) -> bool:
     else:
         # Se solo uno è pronto o i dati stanno ancora fluendo
         if first_cambiato or last_cambiato:
-            print("⏳ Rilevato aggiornamento API in corso. Attendo completamento di tutti gli scenari...")
+            print("⏳ Rilevato aggiornamento API in corso. Attendo che tutti i 51 membri raggiungano l'ultimo giorno...")
         return False
 
 def main():
-    print("Scaricamento dati ECMWF (membri Ensemble) a 14 giorni in corso...")
+    print("Scaricamento dati ECMWF (51 membri Ensemble) a 14 giorni in corso...")
     
     URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
     
+    # Variabili orarie
     hourly_vars = [
         "temperature_850hPa",
         "temperature_500hPa",
@@ -102,12 +88,12 @@ def main():
         "latitude": LATITUDE,
         "longitude": LONGITUDE,
         "hourly": ",".join(hourly_vars),
-        "daily": "precipitation_sum",
+        "daily": "precipitation_sum", # Inserita la precipitazione giornaliera
         "models": "ecmwf_ifs025_ensemble",
         "timezone": "Europe/Rome",
         "forecast_days": 14
     }
-    headers = {"User-Agent": "MeteoBot-Spaghetti/4.1"}
+    headers = {"User-Agent": "MeteoBot-Spaghetti/4.0"}
 
     try:
         response = requests.get(URL, params=params, headers=headers)
@@ -125,6 +111,7 @@ def main():
         
     print("ℹ️ Trovati nuovi dati completi per ECMWF Ensemble. Generazione del grafico in corso...")
     
+    # Assi temporali separati: Orario per termiche/geopotenziale, Giornaliero per pioggia (centrato a metà giornata)
     hourly_times = pd.to_datetime(hourly.get("time"))
     daily_times = pd.to_datetime(daily.get("time")) + pd.Timedelta(hours=12)
 
@@ -144,20 +131,18 @@ def main():
         members_data = [daily[k] for k in member_keys]
         return np.array(members_data, dtype=float)
 
-    # Estrazione matrici
+    # Estrazione matrici (51 membri)
     t850_members = extract_hourly_members("temperature_850hPa")
     z850_members = extract_hourly_members("geopotential_height_850hPa")
     t500_members = extract_hourly_members("temperature_500hPa")
     z500_members = extract_hourly_members("geopotential_height_500hPa")
     precip_members = extract_daily_members("precipitation_sum")
-    
-    # Calcolo dinamico del numero dei membri
-    num_members = t850_members.shape[0] if t850_members is not None else "Multipli"
 
     # Creazione dei 3 Subplot
     fig, axs = plt.subplots(3, 1, figsize=(14, 18), sharex=True)
 
     def applica_spaziatura_asimmetrica(ax_t, ax_z, t_mat, z_mat):
+        """Forza la Temperatura nel 45% superiore e il Geopotenziale nel 45% inferiore del grafico."""
         if t_mat is not None:
             t_min, t_max = np.nanmin(t_mat), np.nanmax(t_mat)
             r_t = t_max - t_min if (t_max - t_min) > 0 else 5.0
@@ -169,7 +154,7 @@ def main():
             ax_z.set_ylim(z_min - 0.05 * r_z, (z_min - 0.05 * r_z) + (r_z / 0.45))
 
     # ====================================================
-    # 1. SUBPLOT 850 hPa
+    # 1. SUBPLOT 850 hPa (Temperatura & Geopotenziale)
     # ====================================================
     ax1 = axs[0]
     ax1_z = ax1.twinx()
@@ -199,10 +184,10 @@ def main():
     lines_1, labels_1 = ax1.get_legend_handles_labels()
     lines_1_z, labels_1_z = ax1_z.get_legend_handles_labels()
     ax1.legend(lines_1 + lines_1_z, labels_1 + labels_1_z, loc='upper left', fontsize=10)
-    ax1.set_title(f"Profilo 850 hPa - Tutti i {num_members} Membri Ensemble ECMWF", fontsize=13, fontweight='bold')
+    ax1.set_title("Profilo 850 hPa - Tutti i membri Ensemble ECMWF", fontsize=13, fontweight='bold')
 
     # ====================================================
-    # 2. SUBPLOT 500 hPa
+    # 2. SUBPLOT 500 hPa (Temperatura & Geopotenziale)
     # ====================================================
     ax2 = axs[1]
     ax2_z = ax2.twinx()
@@ -232,7 +217,7 @@ def main():
     lines_2, labels_2 = ax2.get_legend_handles_labels()
     lines_2_z, labels_2_z = ax2_z.get_legend_handles_labels()
     ax2.legend(lines_2 + lines_2_z, labels_2 + labels_2_z, loc='upper left', fontsize=10)
-    ax2.set_title(f"Profilo 500 hPa - Tutti i {num_members} Membri Ensemble ECMWF", fontsize=13, fontweight='bold')
+    ax2.set_title("Profilo 500 hPa - Tutti i membri Ensemble ECMWF", fontsize=13, fontweight='bold')
 
     # ====================================================
     # 3. SUBPLOT PRECIPITAZIONI GIORNALIERE
@@ -241,17 +226,22 @@ def main():
     color_precip = "#158c3a" 
 
     if precip_members is not None:
+        # 1. Nuvola di punti per i singoli membri (Scatter plot)
+        # Sovrapponiamo i 51 punti per ogni giorno per mostrare la dispersione
         for i in range(precip_members.shape[0]):
             ax3.plot(daily_times, precip_members[i], marker='o', color=color_precip, alpha=0.2, markersize=4, linestyle='None')
         
+        # 2. Barra per la Media Ensemble
         precip_mean = np.nanmean(precip_members, axis=0)
         ax3.bar(daily_times, precip_mean, color=color_precip, alpha=0.5, width=0.7, edgecolor=color_precip, linewidth=1, label='Media Precipitazioni (mm/24h)')
         
-        ax3.plot([], [], marker='o', color=color_precip, alpha=0.5, linestyle='None', label=f'Scenari singoli ({num_members} membri)')
+        # Plot fittizio per aggiungere la nuvola di punti alla legenda
+        ax3.plot([], [], marker='o', color=color_precip, alpha=0.5, linestyle='None', label='Scenari singoli (51 membri)')
 
     ax3.set_ylabel("Precipitazioni Totali (mm/24h)", fontsize=11, color=color_precip, fontweight='bold')
     ax3.tick_params(axis='y', labelcolor=color_precip)
     
+    # Calcolo limite massimo asse Y per le precipitazioni
     p_max = np.nanmax(precip_members) if not np.isnan(precip_members).all() else 0
     ax3.set_ylim(bottom=0, top=max(p_max * 1.2, 5.0))
     ax3.grid(True, linestyle='--', alpha=0.5)
@@ -275,20 +265,16 @@ def main():
     # --- INVIO A TELEGRAM ---
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    thread_id = os.getenv("TELEGRAM_THREAD_ID_ECMWF")
 
     if token and chat_id:
         print("Invio grafico su Telegram in corso...")
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
-        ora_esecuzione = datetime.now().strftime("%d/%m/%Y alle %H:%M")
 
         payload = {
-            "chat_id": chat_id, 
+            "chat_id": chat_id,
+            "caption": "ECMWF (mean + members)",
             "parse_mode": "HTML"
         }
-        
-        if thread_id:
-            payload["message_thread_id"] = thread_id
 
         try:
             with open(FILENAME, "rb") as photo:
