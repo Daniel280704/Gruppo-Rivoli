@@ -277,10 +277,10 @@ def main():
     if token and chat_id:
         print("Invio grafico su Telegram in corso...")
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
-        ora_esecuzione = datetime.now().strftime("%d/%m/%Y alle %H:%M")
 
         payload = {
             "chat_id": chat_id,  
+            "caption": "ECMWF AIFS (mean + members)",
             "parse_mode": "HTML"
         }
         
