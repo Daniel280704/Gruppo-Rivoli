@@ -279,14 +279,6 @@ def main():
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
         ora_esecuzione = datetime.now().strftime("%d/%m/%Y alle %H:%M")
 
-        caption = (
-            "🤖🍝 <b>Spaghetti ECMWF AIFS (14 Giorni)</b>\n"
-            "Modello Ensemble generato da <b>Intelligenza Artificiale</b>.\n"
-            "• <b>850 & 500 hPa:</b> Temp (alto, continua) e Geopotenziale (basso, tratteggiata).\n"
-            f"• <b>Precipitazioni:</b> Accumulo giornaliero. Barre: media. Puntini: dispersione {num_members} scenari.\n\n"
-            f"<i>Aggiornato il {ora_esecuzione}</i>"
-        )
-
         payload = {
             "chat_id": chat_id, 
             "caption": caption, 
