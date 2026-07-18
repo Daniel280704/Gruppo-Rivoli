@@ -235,8 +235,10 @@ def main():
         print("Invio grafico su Telegram in corso...")
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
         
-        # Prepara il pacchetto dati pulito (niente caption)
-        payload = {"chat_id": chat_id}
+        payload = {
+            "chat_id": chat_id,
+            "caption": "ECMWF (mean + spread)"
+        }
         
         # Aggiunge l'ID della stanza se presente
         if thread_id:
