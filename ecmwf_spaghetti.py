@@ -20,23 +20,56 @@ FILE_HASH = "ultimo_hash_ecmwf_spaghetti.txt"
 FILENAME = "ecmwf_spaghetti_profile.png"
 
 def verifica_dati_nuovi(hourly_data: dict) -> bool:
-    sample_key = next((k for k in hourly_data.keys() if 'temperature_850hPa_member' in k), None)
-    sample = hourly_data.get(sample_key, []) if sample_key else []
-        
-    stringa_dati = str(sample).encode('utf-8')
-    hash_attuale = hashlib.md5(stringa_dati).hexdigest()
+    """Verifica se SIA il primo membro (01) SIA l'ultimo membro (51) sono stati aggiornati fino all'ultimo giorno."""
     
-    is_nuovo = True
-    if os.path.exists(FILE_HASH):
-        with open(FILE_HASH, "r") as f:
-            if f.read().strip() == hash_attuale:
-                is_nuovo = False
-
-    if is_nuovo:
+    member_first = hourly_data.get("temperature_850hPa_member01", [])
+    member_last = hourly_data.get("temperature_850hPa_member51", [])
+    
+    # Sicurezza: controlliamo che ci siano dati sufficienti prima di "tagliare" l'array
+    if not member_first or not member_last or len(member_first) < 24:
+        return False
+        
+    # IL TRUCCO: Estraiamo solo le ultime 24 ore del periodo di previsione
+    ultime_24h_first = member_first[-24:]
+    ultime_24h_last = member_last[-24:]
+    
+    # Calcoliamo i due hash solo sulla "coda" del run
+    hash_first_attuale = hashlib.md5(str(ultime_24h_first).encode('utf-8')).hexdigest()
+    hash_last_attuale = hashlib.md5(str(ultime_24h_last).encode('utf-8')).hexdigest()
+    
+    # Se il file non esiste (prima esecuzione assoluta)
+    if not os.path.exists(FILE_HASH):
         with open(FILE_HASH, "w") as f:
-            f.write(hash_attuale)
+            f.write(f"{hash_first_attuale}\n{hash_last_attuale}")
+        return True
+        
+    # Leggiamo i vecchi hash dal file
+    with open(FILE_HASH, "r") as f:
+        lines = f.read().splitlines()
+        
+    # Setup del file se ha la lunghezza corretta
+    if len(lines) == 2:
+        hash_first_salvato = lines[0]
+        hash_last_salvato = lines[1]
+    else:
+        with open(FILE_HASH, "w") as f:
+            f.write(f"{hash_first_attuale}\n{hash_last_attuale}")
+        return True
 
-    return is_nuovo
+    # Valutiamo le differenze sull'ultimo giorno noto
+    first_cambiato = (hash_first_attuale != hash_first_salvato)
+    last_cambiato = (hash_last_attuale != hash_last_salvato)
+    
+    # CONDIZIONE RIGOROSA: La coda del run di entrambi i membri estremi deve essere nuova
+    if first_cambiato and last_cambiato:
+        with open(FILE_HASH, "w") as f:
+            f.write(f"{hash_first_attuale}\n{hash_last_attuale}")
+        return True
+    else:
+        # Se solo uno è pronto o i dati stanno ancora fluendo
+        if first_cambiato or last_cambiato:
+            print("⏳ Rilevato aggiornamento API in corso. Attendo che tutti i 51 membri raggiungano l'ultimo giorno...")
+        return False
 
 def main():
     print("Scaricamento dati ECMWF (51 membri Ensemble) a 14 giorni in corso...")
@@ -73,10 +106,10 @@ def main():
         sys.exit(1)
 
     if not verifica_dati_nuovi(hourly):
-        print("ℹ️ Nessun aggiornamento trovato per ECMWF Spaghetti. Elaborazione fermata.")
+        print("ℹ️ Nessun aggiornamento completo trovato per ECMWF Spaghetti. Elaborazione fermata.")
         sys.exit(0)
         
-    print("ℹ️ Trovati nuovi dati per ECMWF Ensemble. Generazione del grafico in corso...")
+    print("ℹ️ Trovati nuovi dati completi per ECMWF Ensemble. Generazione del grafico in corso...")
     
     # Assi temporali separati: Orario per termiche/geopotenziale, Giornaliero per pioggia (centrato a metà giornata)
     hourly_times = pd.to_datetime(hourly.get("time"))
@@ -232,24 +265,24 @@ def main():
     # --- INVIO A TELEGRAM ---
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    thread_id = os.getenv("TELEGRAM_THREAD_ID_ECMWF") # ID della stanza specifica
 
     if token and chat_id:
         print("Invio grafico su Telegram in corso...")
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
+        ora_esecuzione = datetime.now().strftime("%d/%m/%Y alle %H:%M")
 
-        # Prepara il pacchetto dati senza la caption
-        payload = {"chat_id": chat_id}
-        
-        # Se c'è l'ID della stanza, lo aggiunge
-        if thread_id:
-            payload["message_thread_id"] = thread_id
+        caption = (
+            "🍝 <b>Meteogramma Spaghetti ECMWF IFS (14 Giorni)</b>\n"
+            "• <b>850 & 500 hPa:</b> Temp (alto, continua) e Geopotenziale (basso, tratteggiata).\n"
+            "• <b>Precipitazioni:</b> Accumulo giornaliero. Le barre indicano la media, i puntini mostrano la dispersione dei 51 scenari.\n\n"
+            f"<i>Aggiornato il {ora_esecuzione}</i>"
+        )
 
         try:
             with open(FILENAME, "rb") as photo:
                 res = requests.post(
                     url_telegram,
-                    data=payload,
+                    data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
                     files={"photo": photo}
                 )
 
