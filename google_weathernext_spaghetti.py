@@ -279,9 +279,9 @@ def main():
         print("Invio grafico su Telegram in corso...")
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
 
-        # Payload pulito: Nessuna caption
         payload = {
             "chat_id": chat_id, 
+            "caption": "(mean + members)",
             "parse_mode": "HTML"
         }
         
