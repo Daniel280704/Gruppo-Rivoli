@@ -16,20 +16,56 @@ FILE_HASH = "ultimo_hash_ecmwf_aifs.txt"
 FILENAME = "ecmwf_aifs_profile.png"
 
 def verifica_dati_nuovi(hourly_data: dict) -> bool:
-    stringa_dati = str(hourly_data.get("temperature_2m", [])).encode('utf-8')
-    hash_attuale = hashlib.md5(stringa_dati).hexdigest()
+    """Verifica se SIA la media SIA lo spread sono stati aggiornati fino all'ultimo giorno."""
     
-    is_nuovo = True
-    if os.path.exists(FILE_HASH):
-        with open(FILE_HASH, "r") as f:
-            if f.read().strip() == hash_attuale:
-                is_nuovo = False
-
-    if is_nuovo:
+    temp_mean = hourly_data.get("temperature_2m", [])
+    temp_spread = hourly_data.get("temperature_2m_spread", [])
+    
+    # Sicurezza: controlliamo che ci siano dati sufficienti prima di "tagliare" l'array
+    if not temp_mean or not temp_spread or len(temp_mean) < 24:
+        return False
+        
+    # IL TRUCCO: Estraiamo solo le ultime 24 ore del periodo di previsione
+    ultime_24h_mean = temp_mean[-24:]
+    ultime_24h_spread = temp_spread[-24:]
+    
+    # Calcoliamo i due hash solo sulla "coda" del run
+    hash_mean_attuale = hashlib.md5(str(ultime_24h_mean).encode('utf-8')).hexdigest()
+    hash_spread_attuale = hashlib.md5(str(ultime_24h_spread).encode('utf-8')).hexdigest()
+    
+    # Se il file non esiste (prima esecuzione assoluta)
+    if not os.path.exists(FILE_HASH):
         with open(FILE_HASH, "w") as f:
-            f.write(hash_attuale)
+            f.write(f"{hash_mean_attuale}\n{hash_spread_attuale}")
+        return True
+        
+    # Leggiamo i vecchi hash dal file
+    with open(FILE_HASH, "r") as f:
+        lines = f.read().splitlines()
+        
+    # Setup del file se ha la lunghezza corretta
+    if len(lines) == 2:
+        hash_mean_salvato = lines[0]
+        hash_spread_salvato = lines[1]
+    else:
+        with open(FILE_HASH, "w") as f:
+            f.write(f"{hash_mean_attuale}\n{hash_spread_attuale}")
+        return True
 
-    return is_nuovo
+    # Valutiamo le differenze sull'ultimo giorno noto
+    mean_cambiata = (hash_mean_attuale != hash_mean_salvato)
+    spread_cambiato = (hash_spread_attuale != hash_spread_salvato)
+    
+    # CONDIZIONE RIGOROSA: La coda del run di entrambi i parametri deve essere nuova
+    if mean_cambiata and spread_cambiato:
+        with open(FILE_HASH, "w") as f:
+            f.write(f"{hash_mean_attuale}\n{hash_spread_attuale}")
+        return True
+    else:
+        # Se solo uno è pronto o i dati stanno ancora fluendo
+        if mean_cambiata or spread_cambiato:
+            print("⏳ Rilevato aggiornamento API AIFS in corso. Attendo che il run raggiunga l'ultimo giorno...")
+        return False
 
 def main():
     print("Scaricamento dati ECMWF AIFS a 14 giorni in corso...")
@@ -70,7 +106,7 @@ def main():
         sys.exit(1)
 
     if not verifica_dati_nuovi(hourly):
-        print("ℹ️ Nessun aggiornamento trovato per AIFS. Elaborazione fermata.")
+        print("ℹ️ Nessun aggiornamento completo trovato per AIFS. Elaborazione fermata.")
         sys.exit(0)
         
     print("ℹ️ Trovati nuovi dati per AIFS. Generazione del grafico in corso...")
