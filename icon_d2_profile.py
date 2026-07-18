@@ -21,26 +21,21 @@ FILE_HASH = "ultimo_hash_icon_d2.txt"
 FILENAME = "icon_d2_profile.png"
 
 def verifica_dati_nuovi(hourly_data: dict) -> bool:
-    """Verifica se SIA la media SIA lo spread sono stati aggiornati fino all'ultima ora del 3° giorno."""
+    """Verifica media e spread sull'intero array valido, adattandosi alla lunghezza variabile del run."""
     
     temp_mean = hourly_data.get("temperature_2m", [])
     temp_spread = hourly_data.get("temperature_2m_spread", [])
     
-    if not temp_mean or not temp_spread or len(temp_mean) < 24:
+    # Estraiamo TUTTI i dati reali, scartando i "vuoti" (None) alla fine dell'array
+    valid_mean = [x for x in temp_mean if x is not None]
+    valid_spread = [x for x in temp_spread if x is not None]
+    
+    # ICON-D2 deve avere almeno 48 ore di previsione. Se ne ha meno, l'API è rotta o sta caricando
+    if len(valid_mean) < 48 or len(valid_spread) < 48:
+        print(f"⏳ Dati insufficienti (ore valide: {len(valid_mean)}/48 minime). Attendo run...")
         return False
         
-    # Estraiamo le ultime 24 ore
-    ultime_24h_mean = temp_mean[-24:]
-    ultime_24h_spread = temp_spread[-24:]
-    
-    # Filtriamo eventuali valori vuoti (API non ancora completa)
-    valid_mean = [x for x in ultime_24h_mean if x is not None]
-    valid_spread = [x for x in ultime_24h_spread if x is not None]
-    
-    if len(valid_mean) < 24 or len(valid_spread) < 24:
-        print(f"⏳ Dati non completi (ore valide: {len(valid_mean)}/24). Attendo run...")
-        return False
-        
+    # Calcoliamo l'hash sull'INTERO blocco di dati validi (adattandosi in automatico a 48, 54 o 72 ore)
     hash_mean_attuale = hashlib.md5(str(valid_mean).encode('utf-8')).hexdigest()
     hash_spread_attuale = hashlib.md5(str(valid_spread).encode('utf-8')).hexdigest()
     
@@ -63,14 +58,14 @@ def verifica_dati_nuovi(hourly_data: dict) -> bool:
     mean_cambiata = (hash_mean_attuale != hash_mean_salvato)
     spread_cambiato = (hash_spread_attuale != hash_spread_salvato)
     
-    # Condizione rigorosa
+    # CONDIZIONE RIGOROSA: Sia la media sia lo spread dell'intero run devono essere nuovi
     if mean_cambiata and spread_cambiato:
         with open(FILE_HASH, "w") as f:
             f.write(f"{hash_mean_attuale}\n{hash_spread_attuale}")
         return True
     else:
         if mean_cambiata or spread_cambiato:
-            print("⏳ Aggiornamento API ICON-D2 a metà. Attendo...")
+            print("⏳ Aggiornamento API ICON-D2 a metà (Media o Spread non allineati). Attendo...")
         return False
 
 def fetch_dati_con_retry() -> dict:
