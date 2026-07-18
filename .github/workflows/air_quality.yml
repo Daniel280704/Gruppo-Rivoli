@@ -2,8 +2,9 @@ name: Invio Grafico Qualità Aria
 
 on:
   schedule:
-    # Gira alle 12:33, 13:33 e 14:33 italiane (10:33, 11:33 e 12:33 UTC)
-    - cron: '33 10-12 * * *'
+    # Esegue ai minuti 33 delle ore 07, 09, 19 e 21 UTC 
+    # (Corrispondono esattamente alle 09:33, 11:33, 21:33 e 23:33 orario italiano CEST)
+    - cron: '33 7,9,19,21 * * *'
   workflow_dispatch:
 
 jobs:
