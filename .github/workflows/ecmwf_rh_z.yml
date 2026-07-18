@@ -1,0 +1,43 @@
+name: Invio Colonna Umidità e Geopotenziale ECMWF
+
+on:
+  schedule:
+    # Esegue al minuto 10 ogni 2 ore, per non accavallarsi con gli altri script
+    - cron: '10 */2 * * *'
+  
+  workflow_dispatch:
+
+jobs:
+  genera_e_invia_rh_z:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write 
+
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests numpy pandas matplotlib
+
+      - name: Esegui Script RH-Z ECMWF
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID_ECMWF: ${{ secrets.TELEGRAM_THREAD_ID_ECMWF }}
+        run: python ecmwf_rh_z.py
+
+      - name: Salva il file hash dei dati (Commit & Push)
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add ultimo_hash_ecmwf_rh_z.txt || true
+          git commit -m "Aggiornamento hash Profilo Verticale RH-Z ECMWF [skip ci]" || echo "Nessun nuovo run ECMWF RH-Z"
+          git push
