@@ -304,14 +304,6 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
 
-# --- ESECUZIONE FORZATA BATCH ---
-def main():
-    print("Avvio elaborazione forzata batch climatico con pause per evitare limiti API e bot Telegram...")
-    
-
-    
-    process_period('month', 2026, target_month=6)
-    print("Lancio batch completato!")
 
 if __name__ == "__main__":
     main()
