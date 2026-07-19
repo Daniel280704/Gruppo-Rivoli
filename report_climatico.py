@@ -310,9 +310,7 @@ def main():
     
     
 
-    
-    process_period('month', 2026, target_month=2)
-    print("In attesa 30 secondi..."); time.sleep(30)
+
     
     process_period('season', 2026, target_season='winter')
     print("In attesa 30 secondi..."); time.sleep(30)
