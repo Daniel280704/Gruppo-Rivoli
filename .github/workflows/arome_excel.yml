@@ -2,7 +2,8 @@ name: "Generazione Excel Profilo Atmosferico AROME"
 
 on:
   schedule:
-    - cron: '12 */2 * * *'
+    # Esegue al minuto 12 ogni 2 ore, SOLO nei mesi da Novembre ad Aprile
+    - cron: '12 */2 * 1-4,11-12 *'
   
   workflow_dispatch:
 
