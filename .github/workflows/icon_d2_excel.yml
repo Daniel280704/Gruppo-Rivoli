@@ -1,0 +1,32 @@
+name: "Generazione Excel Profilo Atmosferico"
+
+on:
+  schedule:
+    - cron: '45 */3 * * *' # Sfalsato di 15 minuti rispetto all'immagine se decidi di usarli entrambi
+  workflow_dispatch:
+
+jobs:
+  generate-excel:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v4
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa le dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas openpyxl
+
+      - name: Genera e invia file Excel
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID_HD: ${{ secrets.TELEGRAM_THREAD_ID_HD }}
+        run: |
+          python icon_d2_excel.py
