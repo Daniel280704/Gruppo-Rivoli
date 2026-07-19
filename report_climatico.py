@@ -256,10 +256,10 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
 
-# --- ESECUZIONE FORZATA PER FEBBRAIO 2026 ---
+# --- ESECUZIONE FORZATA PER INVERNO 2025/2026 ---
 def main():
-    print("Avvio elaborazione forzata per Febbraio 2026...")
-    process_period('month', 2026, target_month=2)
+    print("Avvio elaborazione forzata per Inverno 2025/2026...")
+    process_period('season', 2026, target_season='winter')
 
 if __name__ == "__main__":
     main()
