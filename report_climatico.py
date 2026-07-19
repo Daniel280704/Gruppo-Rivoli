@@ -98,7 +98,7 @@ def check_daily_extreme(df_daily, target_year, metric, is_hot):
     rows_above = df_sorted.iloc[:idx]
     details = [f"{row['date'].strftime('%d/%m/%Y')} ({row[metric]:.1f} °C)" for _, row in rows_above.iterrows()]
     
-    return f"🌡 {base_text} [_dietro al {', '.join(details)}_]\n"
+    return f"🌡 {base_text} [dietro al {', '.join(details)}]\n"
 
 def generate_dashboard(tmax, tmin, precip, diff_tmax, diff_tmin, diff_precip, title, filename):
     fig, ax = plt.subplots(figsize=(10, 5))
