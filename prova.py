@@ -61,7 +61,7 @@ def main():
     ax1.set_xticklabels(mesi)
     
     # Limite precipitazioni richiesto (1.1)
-    ax1.set_ylim(0, max(climatology['precip']) * 1.3)
+    ax1.set_ylim(0, max(climatology['precip']) * 1.35)
 
     # Temperature
     ax2 = ax1.twinx()
