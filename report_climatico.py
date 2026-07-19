@@ -288,7 +288,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
     thread_id = os.getenv("TELEGRAM_THREAD_ID_STORIA") 
     
     if token and chat_id:
-        caption = f"📊 **Report Climatico: {nome_periodo}**\n {testo_classifica}"
+        caption = f"📊 **Report Climatico: {nome_periodo}**\n{testo_classifica}"
         payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}
         if thread_id: payload["message_thread_id"] = thread_id
         try:
@@ -309,8 +309,7 @@ def main():
     print("Avvio elaborazione forzata batch climatico con pause per evitare limiti API e bot Telegram...")
     
     
-    process_period('month', 2026, target_month=1)
-    print("In attesa 30 secondi..."); time.sleep(30)
+
     
     process_period('month', 2026, target_month=2)
     print("In attesa 30 secondi..."); time.sleep(30)
