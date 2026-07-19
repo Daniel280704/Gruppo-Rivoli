@@ -4,21 +4,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-# --- FUNZIONE HELPER PER LA CLASSIFICA DETTAGLIATA ---
+# --- FUNZIONE HELPER PER LA CLASSIFICA STORICA (TOP 5) ---
 def genera_dettaglio_classifica(df, year_target, metric, diff, unit):
-    # Se la differenza è > 0 siamo in surplus (ordine decrescente: più caldo/piovoso in cima)
-    # Se è < 0 siamo in deficit (ordine crescente: più freddo/secco in cima)
     is_surplus = diff > 0
     ascending_order = not is_surplus
     
-    # Ordiniamo il dataframe storico in base alla metrica e resettiamo l'indice
+    # Ordiniamo il database dal più estremo al meno estremo
     df_sorted = df.sort_values(by=metric, ascending=ascending_order).reset_index(drop=True)
     
-    # Troviamo a quale riga (indice) è finito il nostro anno target (2026)
+    # Troviamo la posizione dell'anno in corso
     idx = df_sorted[df_sorted['year'] == year_target].index[0]
-    pos = idx + 1 # La posizione in classifica è l'indice + 1
+    pos = idx + 1
     
-    # Determiniamo le parole chiave
+    # Etichette dinamiche
     if metric == 'tmax' or metric == 'tmin':
         tipo = "più caldo" if is_surplus else "più freddo"
     else:
@@ -26,21 +24,22 @@ def genera_dettaglio_classifica(df, year_target, metric, diff, unit):
         
     base_text = f"**{pos}°** {tipo}"
     
-    details = []
-    # Se l'indice è > 0, significa che c'è qualcuno sopra di noi in classifica
-    if idx > 0:
-        val_above = df_sorted.iloc[idx - 1]
-        details.append(f"dietro al {int(val_above['year'])} ({val_above[metric]:.1f}{unit})")
+    # Se non è in Top 5, restituiamo solo la posizione nuda e cruda
+    if pos > 5:
+        return base_text
         
-    # Se l'indice è minore dell'ultima riga, c'è qualcuno sotto di noi in classifica
-    if idx < len(df_sorted) - 1:
-        val_below = df_sorted.iloc[idx + 1]
-        details.append(f"davanti al {int(val_below['year'])} ({val_below[metric]:.1f}{unit})")
+    # Se è primo assoluto
+    if pos == 1:
+        return f"{base_text} [🏆 Record Assoluto dal 1940!]"
+    
+    # Se è tra il 2° e il 5° posto, peschiamo tutti quelli sopra in classifica
+    rows_above = df_sorted.iloc[:idx]
+    
+    # Formattiamo la lista: "2005 (32.0 mm)"
+    details = [f"{int(row['year'])} ({row[metric]:.1f} {unit})" for _, row in rows_above.iterrows()]
+    dettagli_str = ", ".join(details)
         
-    # Assembliamo la stringa finale
-    if details:
-        return f"{base_text} [_{', '.join(details)}_]"
-    return base_text
+    return f"{base_text} [_dietro al {dettagli_str}_]"
 
 def main():
     print("Recupero dati di Giugno 2026 e medie storiche...")
@@ -88,7 +87,7 @@ def main():
         df_storico_lungo['year'] = df_storico_lungo['date'].dt.year
         df_storico_lungo['month'] = df_storico_lungo['date'].dt.month
         
-        # Filtriamo tutti i mesi di Giugno (1940-2025) e calcoliamo le medie/somme
+        # Filtriamo tutti i mesi di Giugno (1940-2025)
         df_giugno = df_storico_lungo[df_storico_lungo['month'] == 6]
         giugno_storico = df_giugno.groupby('year').agg({
             'tmax': 'mean', 
@@ -101,7 +100,7 @@ def main():
         giugno_totale = pd.concat([giugno_storico, nuova_riga], ignore_index=True)
         tot_anni = len(giugno_totale)
         
-        # Generiamo i testi dettagliati usando la funzione Helper
+        # Generiamo i testi dettagliati
         testo_tmax = genera_dettaglio_classifica(giugno_totale, 2026, 'tmax', diff_tmax, "°C")
         testo_tmin = genera_dettaglio_classifica(giugno_totale, 2026, 'tmin', diff_tmin, "°C")
         testo_precip = genera_dettaglio_classifica(giugno_totale, 2026, 'precip', diff_precip, "mm")
