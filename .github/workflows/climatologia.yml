@@ -1,12 +1,48 @@
-name: Invio Grafico Climatologia Storica
+name: Automazione e Report Climatici
 
 on:
-  # L'esecuzione è esclusivamente manuale tramite il pulsante "Run workflow" su GitHub
+  schedule:
+    # Esegue ai minuti 14 delle ore 08, 10 e 12 UTC del 7° giorno del mese
+    # (Corrispondono alle 10:14, 12:14 e 14:14 in orario estivo italiano)
+    - cron: '14 8,10,12 7 * *'
+    
   workflow_dispatch:
+    inputs:
+      run_type:
+        description: 'Cosa vuoi generare?'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto (Standard - Non toccare se non sai cosa fa)
+          - recover_all_2026 (MAGIA: Recupera in un colpo solo Gen-Giu, Inverno e Primavera 2026)
+          - recover_month (Recupera un mese specifico)
+          - recover_season (Recupera una stagione)
+          - recover_year (Recupera un anno intero)
+      target_month:
+        description: 'Se hai scelto recover_month: inserisci il numero (1-12)'
+        required: false
+        default: '6'
+      target_season:
+        description: 'Se hai scelto recover_season: scegli la stagione'
+        required: false
+        default: 'spring'
+        type: choice
+        options:
+          - winter
+          - spring
+          - summer
+          - autumn
+      target_year:
+        description: 'Anno di recupero (es. 2026)'
+        required: false
+        default: '2026'
 
 jobs:
-  genera_e_invia_climatologia:
+  run_reports:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write 
 
     steps:
       - name: Checkout del codice
@@ -22,9 +58,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests numpy pandas matplotlib
 
-      - name: Esegui Script Climatologia Storica
+      - name: Esegui Report
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_THREAD_ID_STORIA: ${{ secrets.TELEGRAM_THREAD_ID_STORIA }}
-        run: python climatologia.py
+          
+          # Questi leggono dal menu a tendina manuale (o usano i default se gira in automatico)
+          RUN_TYPE: ${{ github.event.inputs.run_type || 'auto' }}
+          TARGET_MONTH: ${{ github.event.inputs.target_month }}
+          TARGET_SEASON: ${{ github.event.inputs.target_season }}
+          TARGET_YEAR: ${{ github.event.inputs.target_year }}
+        run: python report_climatico.py 
+
+      - name: Salva il lock inviati (Commit & Push)
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add lock_report_inviati.txt || true
+          git commit -m "Aggiornamento lock report climatici [skip ci]" || echo "Nessun nuovo report inviato"
+          git pull --rebase origin main
+          git push
