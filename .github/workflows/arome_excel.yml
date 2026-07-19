@@ -2,7 +2,6 @@ name: "Generazione Excel Profilo Atmosferico AROME"
 
 on:
   schedule:
-    # Esegue ogni 2 ore ai minuti 12 (4 run deterministici al giorno) come da impostazioni AROME
     - cron: '12 */2 * * *'
   
   workflow_dispatch:
@@ -31,7 +30,7 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_THREAD_ID_HD: ${{ secrets.TELEGRAM_THREAD_ID_HD }}
+          TELEGRAM_THREAD_ID_HD_NEVE: ${{ secrets.TELEGRAM_THREAD_ID_HD_NEVE }}
         run: python arome_excel.py
 
       - name: Salva aggiornamento orario (Commit & Push)
