@@ -1,4 +1,4 @@
-name: Automazione e Report Climatici
+name: Report Climatici
 
 on:
   schedule:
