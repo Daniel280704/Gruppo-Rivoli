@@ -3,7 +3,6 @@ import requests
 import calendar
 import pandas as pd
 import numpy as np
-import matplotlib.subplots as plt_subplots
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from datetime import datetime, timedelta
