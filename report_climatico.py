@@ -46,7 +46,7 @@ def genera_dettaglio_classifica(df, year_target, metric, diff, unit, metric_type
     else:
         dettagli_str = ", ".join(details)
         
-    return f"{base_text} [_dietro al {dettagli_str}_]"
+    return f"{base_text} [dietro al {dettagli_str}]"
 
 def generate_dashboard(tmax, tmin, precip, diff_tmax, diff_tmin, diff_precip, title, filename):
     fig, ax = plt.subplots(figsize=(10, 5))
