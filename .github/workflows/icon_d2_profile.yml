@@ -2,9 +2,8 @@ name: Invio Grafico Unificato ICON-D2
 
 on:
   schedule:
-    # Combinazione cron per eseguire esattamente ogni 90 minuti
-    - cron: '17 0,3,6,9,12,15,18,21 * * *'
-    - cron: '47 1,4,7,10,13,16,19,22 * * *'
+    # Esegue ogni ora al minuto 52 (8 run ensemble al giorno)
+    - cron: '52 * * * *'
   
   workflow_dispatch:
 
@@ -35,11 +34,11 @@ jobs:
           TELEGRAM_THREAD_ID_HD: ${{ secrets.TELEGRAM_THREAD_ID_HD }}
         run: python icon_d2_profile.py
 
-      - name: Salva il file hash dei dati (Commit & Push)
+      - name: Salva aggiornamento orario (Commit & Push)
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add ultimo_hash_icon_d2.txt || true
-          git commit -m "Aggiornamento hash dati unificato ICON-D2 [skip ci]" || echo "Nessun nuovo run ICON-D2"
+          git add ultima_ora_icon_d2.txt || true
+          git commit -m "Aggiornamento orario ICON-D2 [skip ci]" || echo "Nessun nuovo run ICON-D2"
           git pull --rebase origin main
           git push
