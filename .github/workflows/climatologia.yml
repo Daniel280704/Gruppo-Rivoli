@@ -33,7 +33,7 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_THREAD_ID_STORIA: ${{ secrets.TELEGRAM_THREAD_ID_STORIA }}
-        run: python report_climatico.py 
+        run: python climatologia.py 
 
       - name: Salva il lock inviati (Commit & Push)
         run: |
