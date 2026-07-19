@@ -39,7 +39,7 @@ def genera_dettaglio_classifica(df, year_target, metric, diff, unit):
     details = [f"{int(row['year'])} ({row[metric]:.1f} {unit})" for _, row in rows_above.iterrows()]
     dettagli_str = ", ".join(details)
         
-    return f"{base_text} [_dietro al {dettagli_str}_]"
+    return f"{base_text} [ dietro al {dettagli_str} ]"
 
 def main():
     print("Recupero dati di Giugno 2026 e medie storiche...")
