@@ -276,14 +276,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
 def main():
     print("Avvio elaborazione forzata batch climatico...")
     
-    # 1. Dicembre 2025
-    process_period('month', 2025, target_month=12)
-    # 2. Gennaio 2026
-    process_period('month', 2026, target_month=1)
-    # 3. Febbraio 2026
-    process_period('month', 2026, target_month=2)
-    # 4. Inverno Meteorologico 2025/2026
-    process_period('season', 2026, target_season='winter')
+   
     # 5. Marzo 2026
     process_period('month', 2026, target_month=3)
     # 6. Aprile 2026
