@@ -2,8 +2,8 @@ name: Invio Grafico Profilo ECMWF AIFS
 
 on:
   schedule:
-    # Esegue al minuto 27 di ogni 3 ore, per tutto il giorno
-    - cron: '27 */3 * * *'
+    # Esegue ogni 2 ore per intercettare i run 0Z, 6Z, 12Z, 18Z
+    - cron: '18 */2 * * *'
   
   workflow_dispatch:
 
@@ -34,11 +34,11 @@ jobs:
           TELEGRAM_THREAD_ID_ECMWF: ${{ secrets.TELEGRAM_THREAD_ID_ECMWF }}
         run: python ecmwf_aifs.py
 
-      - name: Salva il file hash dei dati (Commit & Push)
+      - name: Salva aggiornamento orario (Commit & Push)
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add ultimo_hash_ecmwf_aifs.txt || true
-          git commit -m "Aggiornamento hash dati AIFS [skip ci]" || echo "Nessun nuovo run AIFS"
+          git add ultima_ora_ecmwf_aifs.txt || true
+          git commit -m "Aggiornamento orario AIFS [skip ci]" || echo "Nessun nuovo run AIFS"
           git pull --rebase origin main
           git push
