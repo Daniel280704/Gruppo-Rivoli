@@ -17,31 +17,32 @@ LONGITUDE = 7.543461388723449
 FILE_LAST_HOUR = "ultima_ora_ecmwf.txt"
 FILENAME = "ecmwf_thermal_geopot_profile.png"
 
-# Regole rigorose ECMWF: Inizia a +2h, Finisce a +362h (15 gg)
 RUN_DURATION = 362
 START_DELAY = 2
 
-def estrai_limiti_run(hourly_data: dict, param1: str, param2: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
+def estrai_limiti_run(hourly_data: dict, hourly_params: list, utc_offset_sec: int) -> tuple[bool, str, int, int]:
     times = hourly_data.get("time", [])
-    vals1 = hourly_data.get(param1, [])
-    vals2 = hourly_data.get(param2, [])
+    if not times: return False, "", -1, -1
 
-    if not times or not vals1 or not vals2: return False, "", -1, -1
+    hourly_end_indices = []
+    for param in hourly_params:
+        vals = hourly_data.get(param, [])
+        if not vals: return False, "", -1, -1
+        
+        end_idx = -1
+        for i in range(len(vals) - 1, -1, -1):
+            if vals[i] is not None:
+                end_idx = i
+                break
+        
+        if end_idx == -1: return False, "", -1, -1
+        hourly_end_indices.append(end_idx)
 
-    end_idx1 = -1
-    for i in range(len(vals1) - 1, -1, -1):
-        if vals1[i] is not None:
-            end_idx1 = i
-            break
-            
-    end_idx2 = -1
-    for i in range(len(vals2) - 1, -1, -1):
-        if vals2[i] is not None:
-            end_idx2 = i
-            break
-
-    if end_idx1 == -1 or end_idx1 != end_idx2: 
+    # Controllo che tutti i livelli siano aggiornati
+    if len(set(hourly_end_indices)) != 1:
         return False, "", -1, -1
+
+    end_idx1 = hourly_end_indices[0]
 
     ultima_ora_valida_str = times[end_idx1]
 
@@ -102,7 +103,7 @@ def fetch_dati_con_retry() -> dict:
         "past_days": 1,
         "forecast_days": 16
     }
-    headers = {"User-Agent": "MeteoBot-EnsemblePlotter/8.0"}
+    headers = {"User-Agent": "MeteoBot-EnsemblePlotter/8.1"}
 
     for tentativo in range(3):
         try:
@@ -122,7 +123,15 @@ def main():
     hourly = data.get("hourly", {})
     utc_offset = data.get("utc_offset_seconds", 0)
     
-    is_new, nome_run, s_idx, e_idx = estrai_limiti_run(hourly, "temperature_2m", "temperature_2m_spread", utc_offset)
+    # Check incrociato per assicurarsi che l'API non stia caricando
+    params_to_check = [
+        "temperature_2m",
+        "temperature_2m_spread",
+        "temperature_500hPa_spread",
+        "geopotential_height_500hPa"
+    ]
+    
+    is_new, nome_run, s_idx, e_idx = estrai_limiti_run(hourly, params_to_check, utc_offset)
     if not is_new: sys.exit(0)
         
     print(f"ℹ️ Trovato nuovo run ECMWF {nome_run}. Generazione grafico esatto...")
