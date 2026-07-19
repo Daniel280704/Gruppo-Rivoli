@@ -1,2 +1,3 @@
 month_2026_01
 month_2026_02
+season_2026_winter
