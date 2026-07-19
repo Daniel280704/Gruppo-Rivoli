@@ -2,7 +2,8 @@ name: "Generazione Excel Profilo Atmosferico ICON-D2"
 
 on:
   schedule:
-    - cron: '42 * * * *' 
+    # Esegue al minuto 42 ogni ora, SOLO nei mesi da Novembre ad Aprile
+    - cron: '42 * * 1-4,11-12 *' 
   workflow_dispatch:
 
 jobs:
