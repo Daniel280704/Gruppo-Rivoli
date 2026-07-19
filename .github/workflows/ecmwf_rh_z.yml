@@ -34,11 +34,11 @@ jobs:
           TELEGRAM_THREAD_ID_ECMWF: ${{ secrets.TELEGRAM_THREAD_ID_ECMWF }}
         run: python ecmwf_rh_z.py
 
-      - name: Salva aggiornamento orario (Commit & Push)
+      - name: Salva aggiornamento hash (Commit & Push)
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add ultima_ora_ecmwf_rh_z.txt || true
-          git commit -m "Aggiornamento orario ECMWF RH-Z [skip ci]" || echo "Nessun nuovo run ECMWF RH-Z"
+          git add ultimo_hash_ecmwf_rh_z.txt || true
+          git commit -m "Aggiornamento hash ECMWF RH-Z [skip ci]" || echo "Nessun nuovo run ECMWF RH-Z"
           git pull --rebase origin main
           git push
