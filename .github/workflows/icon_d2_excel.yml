@@ -2,12 +2,15 @@ name: "Generazione Excel Profilo Atmosferico"
 
 on:
   schedule:
-    - cron: '45 */3 * * *' # Sfalsato di 15 minuti rispetto all'immagine se decidi di usarli entrambi
+    - cron: '45 */3 * * *' 
   workflow_dispatch:
 
 jobs:
   generate-excel:
     runs-on: ubuntu-latest
+    # Aggiungiamo i permessi di scrittura per poter fare il commit del file txt
+    permissions:
+      contents: write 
     
     steps:
       - name: Checkout del codice
@@ -30,3 +33,12 @@ jobs:
           TELEGRAM_THREAD_ID_HD: ${{ secrets.TELEGRAM_THREAD_ID_HD }}
         run: |
           python icon_d2_excel.py
+
+      - name: Salva aggiornamento orario (Commit & Push)
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add ultima_ora_icon_d2_excel.txt || true
+          git commit -m "Aggiornamento orario ICON-D2 Excel [skip ci]" || echo "Nessun nuovo run ICON-D2"
+          git pull --rebase origin main
+          git push
