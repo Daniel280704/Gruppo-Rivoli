@@ -1,5 +1,4 @@
 import os
-import time
 import requests
 import calendar
 import pandas as pd
@@ -288,7 +287,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
     thread_id = os.getenv("TELEGRAM_THREAD_ID_STORIA") 
     
     if token and chat_id:
-        caption = f"📊 **Report Climatico: {nome_periodo}**\n{testo_classifica}"
+        caption = f"📊 **Report Climatico: {nome_periodo}**\n {testo_classifica}"
         payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}
         if thread_id: payload["message_thread_id"] = thread_id
         try:
@@ -304,6 +303,25 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
 
+# --- ESECUZIONE 100% AUTOMATICA (Calendario Perpetuo) ---
+def main():
+    oggi = datetime.now()
+    data_target = oggi - timedelta(days=15)
+    m_target, y_target = data_target.month, data_target.year
+    
+    process_period('month', y_target, target_month=m_target)
+    
+    if m_target == 2: 
+        process_period('season', y_target, target_season='winter')
+    elif m_target == 5: 
+        process_period('season', y_target, target_season='spring')
+    elif m_target == 8: 
+        process_period('season', y_target, target_season='summer')
+    elif m_target == 11: 
+        process_period('season', y_target, target_season='autumn')
+    
+    if m_target == 12: 
+        process_period('year', y_target)
 
 if __name__ == "__main__":
     main()
