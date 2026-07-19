@@ -256,21 +256,10 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
 
-# --- ESECUZIONE 100% AUTOMATICA ---
+# --- ESECUZIONE FORZATA PER GENNAIO 2026 ---
 def main():
-    oggi = datetime.now()
-    # Sottraiamo 15 giorni per elaborare sempre il mese precedente
-    data_target = oggi - timedelta(days=15)
-    m_target, y_target = data_target.month, data_target.year
-    
-    process_period('month', y_target, target_month=m_target)
-    
-    if m_target == 2: process_period('season', y_target, target_season='winter')
-    elif m_target == 5: process_period('season', y_target, target_season='spring')
-    elif m_target == 8: process_period('season', y_target, target_season='summer')
-    elif m_target == 11: process_period('season', y_target, target_season='autumn')
-    
-    if m_target == 12: process_period('year', y_target)
+    print("Avvio elaborazione forzata per Gennaio 2026...")
+    process_period('month', 2026, target_month=1)
 
 if __name__ == "__main__":
     main()
