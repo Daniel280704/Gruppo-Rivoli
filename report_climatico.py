@@ -267,7 +267,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         if txt_trop or txt_hot:
             testo_classifica += f"\n\n🏖 **Estremi di Caldo**\n{txt_trop}{txt_hot}"
 
-        txt_frost = format_extreme("🥶 Notti di gelo", curr['frost_d'], curr['frost_s'], totale_anni, target_year, 'frost_s')
+        txt_frost = format_extreme("🥶 Notti gelide", curr['frost_d'], curr['frost_s'], totale_anni, target_year, 'frost_s')
         txt_ice = format_extreme("🧊 Giorni di ghiaccio", curr['ice_d'], curr['ice_s'], totale_anni, target_year, 'ice_s')
         
         if txt_frost or txt_ice:
