@@ -38,7 +38,7 @@ def genera_dettaglio_classifica(df, year_target, metric, diff, unit):
         
     return f"{base_text} [dietro al {dettagli_str}]"
 
-# --- FUNZIONE ESTREMI AGGIORNATA (INDIPENDENTE DALLA STAGIONE) ---
+# --- LOGICA ESTREMI UNIVERSALE (Senza Medie e Senza Stagioni) ---
 def format_extreme(name, count, streak, df_storico, year_target, metric_name):
     # Se le ricorrenze sono zero, non stampiamo nulla
     if count == 0:
@@ -63,7 +63,7 @@ def format_extreme(name, count, streak, df_storico, year_target, metric_name):
                 details_str = ", ".join(details)
             streak_text = f"({base_streak}, **{pos}°** serie più lunga [dietro al {details_str}])"
         else:
-            # Posizione tra 6 e 10 (solo rank, no lista anni)
+            # Posizione tra 6 e 10 (solo rank, no lista anni dietro a chi)
             streak_text = f"({base_streak}, **{pos}°** serie più lunga)"
     else:
         # Fuori dalla top 10 (solo numero consecutivi)
@@ -120,27 +120,22 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         
     elif period_type == 'season':
         stagioni = {'winter': 'Inverno', 'spring': 'Primavera', 'summer': 'Estate', 'autumn': 'Autunno'}
-        
-        # Per l'inverno, storicamente si indica "Inverno 2025/2026", quindi aggiustiamo il nome
         if target_season == 'winter':
             nome_periodo = f"Inverno {target_year-1}/{target_year}"
-        else:
-            nome_periodo = f"{stagioni[target_season]} {target_year}"
-            
-        lock_id = f"season_{target_year}_{target_season}"
-        
-        if target_season == 'winter':
             start_date, end_date = f"{target_year-1}-12-01", f"{target_year}-02-{calendar.monthrange(target_year, 2)[1]:02d}"
             months_to_filter = [12, 1, 2]
-        elif target_season == 'spring':
-            start_date, end_date = f"{target_year}-03-01", f"{target_year}-05-31"
-            months_to_filter = [3, 4, 5]
-        elif target_season == 'summer':
-            start_date, end_date = f"{target_year}-06-01", f"{target_year}-08-31"
-            months_to_filter = [6, 7, 8]
-        elif target_season == 'autumn':
-            start_date, end_date = f"{target_year}-09-01", f"{target_year}-11-30"
-            months_to_filter = [9, 10, 11]
+        else:
+            nome_periodo = f"{stagioni[target_season]} {target_year}"
+            if target_season == 'spring':
+                start_date, end_date = f"{target_year}-03-01", f"{target_year}-05-31"
+                months_to_filter = [3, 4, 5]
+            elif target_season == 'summer':
+                start_date, end_date = f"{target_year}-06-01", f"{target_year}-08-31"
+                months_to_filter = [6, 7, 8]
+            elif target_season == 'autumn':
+                start_date, end_date = f"{target_year}-09-01", f"{target_year}-11-30"
+                months_to_filter = [9, 10, 11]
+        lock_id = f"season_{target_year}_{target_season}"
             
     elif period_type == 'year':
         nome_periodo = f"Anno {target_year}"
@@ -177,7 +172,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         df_storico['year'] = df_storico['date'].dt.year
         df_storico['month'] = df_storico['date'].dt.month
 
-        # Rimuoviamo l'anno corrente (o l'anno dell'inverno) per poi incollare i dati freschi API
+        # Rimuoviamo l'anno corrente per poi incollare i dati freschi API
         df_storico = df_storico[~((df_storico['year'] == target_year) | (df_storico['year'] == target_year-1))]
         full_df = pd.concat([df_storico, api_df[['date', 'year', 'month', 'tmax', 'tmin', 'precip']]], ignore_index=True)
 
@@ -228,7 +223,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
                             f"❄️ T. Minima: {testo_tmin}\n"
                             f"🌧 Precipitazioni: {testo_precip}")
                             
-        # --- APPLICAZIONE LOGICA ESTREMI PULITA ED UNIVERSALE ---
+        # --- BLOCCO ESTREMI AGGIORNATO (INDIPENDENTE DALLA STAGIONE) ---
         txt_trop = format_extreme("🥵 Notti Tropicali (Tmin >= 20°C)", curr['trop_n'], curr['trop_s'], totale_anni, target_year, 'trop_s')
         txt_hot = format_extreme("☀️ Giorni Roventi (Tmax >= 30°C)", curr['hot_d'], curr['hot_s'], totale_anni, target_year, 'hot_s')
         
@@ -272,13 +267,29 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
 
-# --- ESECUZIONE BATCH RICHIESTA ---
+# --- ESECUZIONE 100% AUTOMATICA (Calendario Perpetuo) ---
 def main():
-    print("Avvio elaborazione forzata batch climatico...")
+    oggi = datetime.now()
+    # Sottraendo 15 giorni siamo certi matematicamente di far cadere i calcoli nel mese solare appena concluso
+    data_target = oggi - timedelta(days=15)
+    m_target, y_target = data_target.month, data_target.year
     
-
-    # 8. Giugno 2026
-    process_period('month', 2026, target_month=6)
+    # 1. Elabora sempre il mese precedente
+    process_period('month', y_target, target_month=m_target)
+    
+    # 2. Controlla se il mese chiuso conclude anche una stagione meteorologica
+    if m_target == 2: 
+        process_period('season', y_target, target_season='winter')
+    elif m_target == 5: 
+        process_period('season', y_target, target_season='spring')
+    elif m_target == 8: 
+        process_period('season', y_target, target_season='summer')
+    elif m_target == 11: 
+        process_period('season', y_target, target_season='autumn')
+    
+    # 3. Controlla se chiude un intero anno solare
+    if m_target == 12: 
+        process_period('year', y_target)
 
 if __name__ == "__main__":
     main()
