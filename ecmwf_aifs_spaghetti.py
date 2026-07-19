@@ -17,8 +17,9 @@ LONGITUDE = 7.543461388723449
 FILE_LAST_HOUR = "ultima_ora_ecmwf_aifs_spaghetti.txt"
 FILENAME = "ecmwf_aifs_spaghetti_profile.png"
 
-RUN_DURATION = 360
-START_DELAY = 0
+# Regole rigorose AIFS: Inizia a -2h, Finisce a +365h (15 gg + 5h)
+RUN_DURATION = 365
+START_DELAY = -2
 
 def estrai_limiti_run(hourly_data: dict, param1: str, param2: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
     times = hourly_data.get("time", [])
@@ -94,7 +95,7 @@ def fetch_dati_con_retry() -> dict:
         "past_days": 1,
         "forecast_days": 16
     }
-    headers = {"User-Agent": "MeteoBot-AIFS-Spaghetti/2.0"}
+    headers = {"User-Agent": "MeteoBot-AIFS-Spaghetti/3.0"}
 
     for tentativo in range(3):
         try:
@@ -229,17 +230,17 @@ def main():
         ax3.bar(daily_times, precip_mean, color=color_precip, alpha=0.5, width=0.7, edgecolor=color_precip, linewidth=1, label='Media Precipitazioni (mm/24h)')
         ax3.plot([], [], marker='o', color=color_precip, alpha=0.5, linestyle='None', label=f'Scenari singoli ({num_members} membri)')
 
-    ax3.set_ylabel("Precipitazioni Totali (mm/24h)", fontsize=11, color=color_precip, fontweight='bold')
+    ax3.set_ylabel("Precipitazioni (mm/24h)", fontsize=11, color=color_precip, fontweight='bold')
     ax3.tick_params(axis='y', labelcolor=color_precip)
     
     p_max = np.nanmax(precip_members) if not np.isnan(precip_members).all() else 0
     ax3.set_ylim(bottom=0, top=max(p_max * 1.2, 5.0))
     ax3.grid(True, linestyle='--', alpha=0.5)
     ax3.legend(loc='upper left', fontsize=10)
-    ax3.set_title("Precipitazioni Giornaliere - Accumulo Totale 24h", fontsize=13, fontweight='bold')
+    ax3.set_title("Precipitazioni Giornaliere", fontsize=13, fontweight='bold')
 
-    titolo_in_basso = "Meteogramma Spaghetti ECMWF AIFS (AI) (15 Giorni)   |   Data e Ora (Fuso Orario Locale)"
-    axs[-1].set_xlabel(titolo_in_basso, fontsize=12, fontweight='bold', labelpad=15)
+    lunghezza_effettiva = len(hourly_times) - 1
+    axs[-1].set_xlabel(f"Meteogramma AIFS ({lunghezza_effettiva}h)   |   Data e Ora (Locale)", fontsize=12, fontweight='bold', labelpad=15)
     axs[-1].xaxis.set_major_locator(mdates.DayLocator())
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
     axs[-1].xaxis.set_minor_locator(mdates.HourLocator(byhour=[12]))
