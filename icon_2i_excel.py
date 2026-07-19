@@ -11,11 +11,43 @@ warnings.filterwarnings('ignore')
 FILENAME = "profili_atmosferici_icon_2i.xlsx"
 FILE_LAST_HOUR = "ultima_ora_icon_2i_excel.txt"
 
-# Regole fisse per ICON-2I (da tuo file originale)
+LAT = 45.07347491421504
+LON = 7.543461388723449
+
+# Regole fisse per ICON-2I
 RUN_DURATION = 72
 START_DELAY = 0
 
-URL = "https://api.open-meteo.com/v1/forecast?latitude=45.0707&longitude=7.5146&hourly=temperature_1000hPa,temperature_925hPa,temperature_850hPa,temperature_500hPa,temperature_700hPa,temperature_250hPa,relative_humidity_1000hPa,relative_humidity_700hPa,relative_humidity_925hPa,relative_humidity_850hPa,relative_humidity_500hPa,relative_humidity_250hPa,wind_speed_1000hPa,wind_speed_925hPa,wind_speed_850hPa,wind_speed_700hPa,wind_speed_500hPa,wind_speed_250hPa,wind_direction_1000hPa,wind_direction_925hPa,wind_direction_850hPa,wind_direction_700hPa,wind_direction_250hPa,wind_direction_500hPa,geopotential_height_1000hPa,geopotential_height_925hPa,geopotential_height_850hPa,geopotential_height_700hPa,geopotential_height_500hPa,geopotential_height_250hPa&models=italia_meteo_arpae_icon_2i&timezone=auto&forecast_days=5"
+URL_CHECK = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&hourly=snowfall,rain,snowfall_height,freezing_level_height&models=italia_meteo_arpae_icon_2i&timezone=auto&forecast_days=5"
+URL_MAIN = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&hourly=temperature_1000hPa,temperature_925hPa,temperature_850hPa,temperature_500hPa,temperature_700hPa,temperature_250hPa,relative_humidity_1000hPa,relative_humidity_700hPa,relative_humidity_925hPa,relative_humidity_850hPa,relative_humidity_500hPa,relative_humidity_250hPa,wind_speed_1000hPa,wind_speed_925hPa,wind_speed_850hPa,wind_speed_700hPa,wind_speed_500hPa,wind_speed_250hPa,wind_direction_1000hPa,wind_direction_925hPa,wind_direction_850hPa,wind_direction_700hPa,wind_direction_250hPa,wind_direction_500hPa,geopotential_height_1000hPa,geopotential_height_925hPa,geopotential_height_850hPa,geopotential_height_700hPa,geopotential_height_500hPa,geopotential_height_250hPa&models=italia_meteo_arpae_icon_2i&timezone=auto&forecast_days=5"
+
+def check_condizioni_neve() -> bool:
+    print("⏳ Verifica preliminare condizioni neve ICON-2I...")
+    try:
+        response = requests.get(URL_CHECK, timeout=30)
+        response.raise_for_status()
+        hourly = response.json().get("hourly", {})
+        
+        snowfall = hourly.get("snowfall", [])
+        rain = hourly.get("rain", [])
+        z_term = hourly.get("freezing_level_height", [])
+        snow_height = hourly.get("snowfall_height", [])
+
+        for i in range(len(snowfall)):
+            snw = snowfall[i] if snowfall[i] is not None else 0
+            rn = rain[i] if rain[i] is not None else 0
+            zt = z_term[i] if z_term[i] is not None else 9999
+            sh = snow_height[i] if snow_height[i] is not None else 9999
+
+            if snw >= 0.5:
+                return True
+            if rn >= 0.5 and (zt < 1000 or sh < 500):
+                return True
+                
+        return False
+    except Exception as e:
+        print(f"⚠️ Errore durante il check neve: {e}", file=sys.stderr)
+        return False
 
 def estrai_limiti_run(hourly_data: dict, ref_param: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
     times = hourly_data.get("time", [])
@@ -51,7 +83,6 @@ def estrai_limiti_run(hourly_data: dict, ref_param: str, utc_offset_sec: int) ->
     actual_points = end_idx - start_idx + 1
 
     if actual_points < expected_points:
-        print(f"⏳ Run {nome_run} in caricamento... ({actual_points}/{expected_points} ore)")
         return False, "", -1, -1
 
     if os.path.exists(FILE_LAST_HOUR):
@@ -65,19 +96,16 @@ def estrai_limiti_run(hourly_data: dict, ref_param: str, utc_offset_sec: int) ->
 
     return True, nome_run, start_idx, end_idx
 
-
 def gradi_a_punti_cardinali(gradi):
-    if pd.isna(gradi) or gradi is None:
-        return None
+    if pd.isna(gradi) or gradi is None: return None
     val = int((gradi / 45) + 0.5)
-    punti = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"]
-    return punti[val % 8]
+    return ["N", "NE", "E", "SE", "S", "SO", "O", "NO"][val % 8]
 
 def fetch_dati_con_retry():
     headers = {"User-Agent": "MeteoBot-Excel-ICON2I/1.0"}
     for tentativo in range(3):
         try:
-            response = requests.get(URL, headers=headers, timeout=30)
+            response = requests.get(URL_MAIN, headers=headers, timeout=30)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -86,6 +114,10 @@ def fetch_dati_con_retry():
     return {}
 
 def main():
+    if not check_condizioni_neve():
+        print("❄️ Condizioni neve/freddo non soddisfatte. Lo script si interrompe.")
+        sys.exit(0)
+
     print("Scaricamento dati ICON-2I per generazione Excel...")
     data = fetch_dati_con_retry()
     
@@ -94,7 +126,6 @@ def main():
     hourly = data.get("hourly", {})
     utc_offset = data.get("utc_offset_seconds", 0)
     
-    # Utilizziamo temperature_1000hPa come parametro guida per il check del run
     is_new, nome_run, s_idx, e_idx = estrai_limiti_run(hourly, "temperature_1000hPa", utc_offset)
     
     if not is_new:
@@ -103,17 +134,13 @@ def main():
         
     print(f"ℹ️ Trovato nuovo run ICON-2I completo: {nome_run}. Generazione Excel in corso...")
 
-    # I livelli di pressione presenti nella tua query per l'API
     levels = [1000, 925, 850, 700, 500, 250]
-    
     times_run = hourly.get("time", [])[s_idx : e_idx + 1]
     rows = []
     
     for relative_i, t_str in enumerate(times_run):
         abs_i = s_idx + relative_i 
-        
-        dt_obj = datetime.fromisoformat(t_str)
-        data_ora_formattata = dt_obj.strftime("%Y-%m-%d %H:%M")
+        data_ora_formattata = datetime.fromisoformat(t_str).strftime("%Y-%m-%d %H:%M")
 
         for p in levels:
             temp = hourly.get(f"temperature_{p}hPa", [])[abs_i] if f"temperature_{p}hPa" in hourly else None
@@ -122,7 +149,6 @@ def main():
             wd_deg = hourly.get(f"wind_direction_{p}hPa", [])[abs_i] if f"wind_direction_{p}hPa" in hourly else None
             geop_raw = hourly.get(f"geopotential_height_{p}hPa", [])[abs_i] if f"geopotential_height_{p}hPa" in hourly else None
 
-            # Arrotondamento del geopotenziale all'intero
             geop = int(round(geop_raw)) if geop_raw is not None and not pd.isna(geop_raw) else None
             wd_cardinale = gradi_a_punti_cardinali(wd_deg)
 
@@ -138,30 +164,21 @@ def main():
                 })
 
     df = pd.DataFrame(rows)
-
-    print("Salvataggio file Excel in corso...")
     df.to_excel(FILENAME, index=False, engine='openpyxl')
     print(f"✅ Excel generato con successo: {FILENAME}")
 
-    # --- INVIO TELEGRAM ---
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    thread_id = os.getenv("TELEGRAM_THREAD_ID_HD")
+    thread_id = os.getenv("TELEGRAM_THREAD_ID_HD_NEVE")
     
     if token and chat_id:
-        print("Invio del file Excel a Telegram...")
         url_telegram = f"https://api.telegram.org/bot{token}/sendDocument"
-        payload = {
-            "chat_id": chat_id, 
-            "caption": f"📊 Profili Atmosferici ICON-2I aggiornati ({nome_run})"
-        }
-        if thread_id: 
-            payload["message_thread_id"] = thread_id
+        payload = {"chat_id": chat_id, "caption": f"❄️ Profili Atmosferici ICON-2I Neve ({nome_run})"}
+        if thread_id: payload["message_thread_id"] = thread_id
             
         try:
             with open(FILENAME, "rb") as doc:
                 requests.post(url_telegram, data=payload, files={"document": doc})
-                print("Inviato con successo!")
         except Exception as e:
             print(f"Errore invio Telegram: {e}")
 
