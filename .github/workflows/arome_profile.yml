@@ -2,9 +2,8 @@ name: Invio Grafico Unificato AROME
 
 on:
   schedule:
-    # Cron ogni 90 minuti (sfalsato ai minuti 02 e 32 per evitare conflitti git push)
-    - cron: '32 0,3,6,9,12,15,18,21 * * *'
-    - cron: '02 2,5,8,11,14,17,20,23 * * *'
+    # Esegue ogni 2 ore ai minuti 12 (4 run deterministici al giorno)
+    - cron: '12 */2 * * *'
   
   workflow_dispatch:
 
@@ -35,11 +34,11 @@ jobs:
           TELEGRAM_THREAD_ID_HD: ${{ secrets.TELEGRAM_THREAD_ID_HD }}
         run: python arome_profile.py
 
-      - name: Salva il file hash dei dati (Commit & Push)
+      - name: Salva aggiornamento orario (Commit & Push)
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add ultimo_hash_arome.txt || true
-          git commit -m "Aggiornamento hash dati unificato AROME [skip ci]" || echo "Nessun nuovo run AROME"
+          git add ultima_ora_arome.txt || true
+          git commit -m "Aggiornamento orario AROME [skip ci]" || echo "Nessun nuovo run AROME"
           git pull --rebase origin main
           git push
