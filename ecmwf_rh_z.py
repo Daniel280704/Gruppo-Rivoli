@@ -17,7 +17,8 @@ LONGITUDE = 7.543461388723449
 FILE_LAST_HOUR = "ultima_ora_ecmwf_rh_z.txt"
 FILENAME = "ecmwf_rh_z_profile.png"
 
-RUN_DURATION = 362
+# Regole ECMWF per 5 Giorni: Inizia a +2h, Finisce a +122h (5 gg + 2h)
+RUN_DURATION = 122
 START_DELAY = 2
 
 def estrai_limiti_run(hourly_data: dict, hourly_params: list, utc_offset_sec: int) -> tuple[bool, str, int, int]:
@@ -93,9 +94,9 @@ def fetch_dati_con_retry() -> dict:
         "models": "ecmwf_ifs025_ensemble_mean",
         "timezone": "Europe/Rome",
         "past_days": 1,
-        "forecast_days": 16
+        "forecast_days": 6
     }
-    headers = {"User-Agent": "MeteoBot-ECMWF-RH-Z/3.1"}
+    headers = {"User-Agent": "MeteoBot-ECMWF-RH-Z/4.0"}
 
     for tentativo in range(3):
         try:
