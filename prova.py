@@ -61,7 +61,7 @@ def main():
     ax1.set_xticklabels(mesi)
     
     # Limite precipitazioni richiesto (1.1)
-    ax1.set_ylim(0, max(climatology['precip']) * 1.1)
+    ax1.set_ylim(0, max(climatology['precip']) * 1.2)
 
     # Temperature
     ax2 = ax1.twinx()
@@ -112,7 +112,7 @@ def main():
         url_photo = f"https://api.telegram.org/bot{token}/sendPhoto"
         payload_photo = {
             "chat_id": chat_id,
-            "caption": "📊 **Climatologia Storica 1991-2020**\nValori normali di temperatura e precipitazioni calcolati per Rivoli.",
+            "caption": "📊 **Climatologia Storica 1991-2020**\nValori normali di temperatura e precipitazioni calcolati per Torino.",
             "parse_mode": "Markdown"
         }
         if thread_id:
