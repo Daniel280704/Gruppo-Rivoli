@@ -7,7 +7,7 @@ import matplotlib.patches as patches
 def main():
     print("Recupero dati di Giugno 2026 e medie storiche...")
 
-    # --- 1. LETTURA DEL RIFERIMENTO STORICO ---
+    # --- 1. LETTURA DEL RIFERIMENTO STORICO TRENTENNALE (1991-2020) ---
     try:
         ref_df = pd.read_csv('riferimento_mensile_1991_2020.csv')
     except FileNotFoundError:
@@ -40,7 +40,60 @@ def main():
     diff_tmin = tmin_eff - tmin_ref
     diff_precip = precip_eff - precip_ref
 
-    # --- 3. GENERAZIONE GRAFICA ---
+    # --- 3. CLASSIFICA STORICA (DAL 1940) ---
+    testo_classifica = ""
+    try:
+        print("Elaborazione classifica storica dal 1940...")
+        df_storico_lungo = pd.read_csv('open-meteo-45.10N7.50E326m_1940_2025.csv', skiprows=3)
+        df_storico_lungo.columns = ['date', 'tmax', 'tmin', 'precip']
+        df_storico_lungo['date'] = pd.to_datetime(df_storico_lungo['date'])
+        df_storico_lungo['year'] = df_storico_lungo['date'].dt.year
+        df_storico_lungo['month'] = df_storico_lungo['date'].dt.month
+        
+        # Filtriamo tutti i mesi di Giugno storici (1940-2025)
+        df_giugno = df_storico_lungo[df_storico_lungo['month'] == 6]
+        giugno_storico = df_giugno.groupby('year').agg({
+            'tmax': 'mean', 
+            'tmin': 'mean', 
+            'precip': 'sum'
+        }).reset_index()
+        
+        # Aggiungiamo i dati del 2026 appena scaricati per calcolare la graduatoria totale
+        nuova_riga = pd.DataFrame({'year': [2026], 'tmax': [tmax_eff], 'tmin': [tmin_eff], 'precip': [precip_eff]})
+        giugno_totale = pd.concat([giugno_storico, nuova_riga], ignore_index=True)
+        tot_anni = len(giugno_totale)
+        
+        # Logica dei piazzamenti dinamici basata su surplus o deficit
+        if diff_tmax > 0:
+            pos_tmax = int(giugno_totale['tmax'].rank(ascending=False, method='min').iloc[-1])
+            testo_tmax = f"{pos_tmax}° più caldo"
+        else:
+            pos_tmax = int(giugno_totale['tmax'].rank(ascending=True, method='min').iloc[-1])
+            testo_tmax = f"{pos_tmax}° più freddo"
+            
+        if diff_tmin > 0:
+            pos_tmin = int(giugno_totale['tmin'].rank(ascending=False, method='min').iloc[-1])
+            testo_tmin = f"{pos_tmin}° più caldo"
+        else:
+            pos_tmin = int(giugno_totale['tmin'].rank(ascending=True, method='min').iloc[-1])
+            testo_tmin = f"{pos_tmin}° più freddo"
+            
+        if diff_precip > 0:
+            pos_precip = int(giugno_totale['precip'].rank(ascending=False, method='min').iloc[-1])
+            testo_precip = f"{pos_precip}° più piovoso"
+        else:
+            pos_precip = int(giugno_totale['precip'].rank(ascending=True, method='min').iloc[-1])
+            testo_precip = f"{pos_precip}° più secco"
+            
+        # Stringa pronta per la caption di Telegram
+        testo_classifica = (f"\n\n🏆 **Classifica Storica (su {tot_anni} anni dal 1940)**\n"
+                            f"🌡 T. Massima: {testo_tmax}\n"
+                            f"❄️ T. Minima: {testo_tmin}\n"
+                            f"🌧 Precipitazioni: {testo_precip}")
+    except FileNotFoundError:
+        print("⚠️ File open-meteo-45.10N7.50E326m_1940_2025.csv non trovato. Salto la classifica storica.")
+
+    # --- 4. GENERAZIONE GRAFICA ---
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.axis('off')
     ax.set_xlim(0, 1)
@@ -96,7 +149,7 @@ def main():
     plt.savefig(output_filename, dpi=300, bbox_inches='tight')
     print(f"✅ Grafico generato e salvato come {output_filename}")
 
-    # --- 4. INVIO A TELEGRAM ---
+    # --- 5. INVIO A TELEGRAM ---
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     thread_id = os.getenv("TELEGRAM_THREAD_ID_STORIA") 
@@ -104,9 +157,12 @@ def main():
     if token and chat_id:
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
         
+        # Inseriamo la classifica appena calcolata direttamente nella Caption del messaggio
+        caption = f"📊 **Report Climatico: Giugno 2026**\nAnalisi delle anomalie termiche e pluviometriche rispetto alla media storica (1991-2020) di Rivoli.{testo_classifica}"
+        
         payload = {
             "chat_id": chat_id,
-            "caption": "📊 **Report Climatico: Giugno 2026**\nAnalisi delle anomalie termiche e pluviometriche rispetto alla media storica (1991-2020) di Rivoli.",
+            "caption": caption,
             "parse_mode": "Markdown"
         }
         
@@ -117,7 +173,7 @@ def main():
             with open(output_filename, "rb") as photo:
                 response = requests.post(url_telegram, data=payload, files={"photo": photo})
                 response.raise_for_status()
-            print("✅ Immagine inviata con successo su Telegram nel thread STORIA!")
+            print("✅ Immagine e Classifica inviate con successo su Telegram nel thread STORIA!")
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
     else:
