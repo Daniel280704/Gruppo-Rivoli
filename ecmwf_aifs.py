@@ -17,8 +17,9 @@ LONGITUDE = 7.543461388723449
 FILE_LAST_HOUR = "ultima_ora_ecmwf_aifs.txt"
 FILENAME = "ecmwf_aifs_profile.png"
 
-RUN_DURATION = 360
-START_DELAY = 0
+# Regole rigorose AIFS: Inizia a -2h, Finisce a +365h (15 gg + 5h)
+RUN_DURATION = 365
+START_DELAY = -2
 
 def estrai_limiti_run(hourly_data: dict, param1: str, param2: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
     times = hourly_data.get("time", [])
@@ -100,7 +101,7 @@ def fetch_dati_con_retry() -> dict:
         "past_days": 1,
         "forecast_days": 16
     }
-    headers = {"User-Agent": "MeteoBot-AIFS/2.0"}
+    headers = {"User-Agent": "MeteoBot-AIFS/3.0"}
 
     for tentativo in range(3):
         try:
@@ -192,7 +193,8 @@ def main():
         else:
             ax.legend(loc='upper right', fontsize=9, ncol=2 if config.get("has_dew") else 1)
 
-    axs[-1].set_xlabel("Analisi ECMWF AIFS (15 Giorni)   |   Data e Ora (Fuso Orario Locale)", fontsize=13, fontweight='bold', labelpad=15)
+    lunghezza_effettiva = len(times) - 1
+    axs[-1].set_xlabel(f"Analisi ECMWF AIFS ({lunghezza_effettiva}h)   |   Data e Ora (Locale)", fontsize=13, fontweight='bold', labelpad=15)
     axs[-1].xaxis.set_major_locator(mdates.DayLocator())
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
     axs[-1].xaxis.set_minor_locator(mdates.HourLocator(byhour=[12]))
