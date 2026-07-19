@@ -1,81 +1,85 @@
 import os
 import sys
-import hashlib
+import time
 import requests
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from datetime import datetime
+from datetime import datetime, timedelta
 import warnings
 
-# Disabilitiamo i warning per array vuoti in fase di calcolo
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
-# Coordinate esatte - Rivoli
 LATITUDE = 45.07347491421504
 LONGITUDE = 7.543461388723449
 
-FILE_HASH = "ultimo_hash_ecmwf_rh_z.txt"
+FILE_LAST_HOUR = "ultima_ora_ecmwf_rh_z.txt"
 FILENAME = "ecmwf_rh_z_profile.png"
 
-def verifica_dati_nuovi(hourly_data: dict) -> bool:
-    """Verifica se SIA l'umidità SIA il geopotenziale sono stati aggiornati fino all'ultimo giorno."""
-    
-    # Usiamo 850hPa come livello di controllo standard
-    rh_data = hourly_data.get("relative_humidity_850hPa", [])
-    z_data = hourly_data.get("geopotential_height_850hPa", [])
-    
-    # Sicurezza: controlliamo che ci siano dati sufficienti prima di tagliare l'array
-    if not rh_data or not z_data or len(rh_data) < 24:
-        return False
-        
-    # Estraiamo solo le ultime 24 ore
-    ultime_24h_rh = rh_data[-24:]
-    ultime_24h_z = z_data[-24:]
-    
-    # Calcoliamo i due hash sulla "coda" del run
-    hash_rh_attuale = hashlib.md5(str(ultime_24h_rh).encode('utf-8')).hexdigest()
-    hash_z_attuale = hashlib.md5(str(ultime_24h_z).encode('utf-8')).hexdigest()
-    
-    # Prima esecuzione assoluta
-    if not os.path.exists(FILE_HASH):
-        with open(FILE_HASH, "w") as f:
-            f.write(f"{hash_rh_attuale}\n{hash_z_attuale}")
-        return True
-        
-    # Lettura vecchi hash
-    with open(FILE_HASH, "r") as f:
-        lines = f.read().splitlines()
-        
-    if len(lines) == 2:
-        hash_rh_salvato = lines[0]
-        hash_z_salvato = lines[1]
-    else:
-        with open(FILE_HASH, "w") as f:
-            f.write(f"{hash_rh_attuale}\n{hash_z_attuale}")
-        return True
+# Regole rigorose ECMWF: Inizia a +2h, Finisce a +362h (15 gg)
+RUN_DURATION = 362
+START_DELAY = 2
 
-    rh_cambiato = (hash_rh_attuale != hash_rh_salvato)
-    z_cambiato = (hash_z_attuale != hash_z_salvato)
-    
-    # CONDIZIONE RIGOROSA: La coda del run di entrambi i parametri deve essere nuova
-    if rh_cambiato and z_cambiato:
-        with open(FILE_HASH, "w") as f:
-            f.write(f"{hash_rh_attuale}\n{hash_z_attuale}")
-        return True
-    else:
-        if rh_cambiato or z_cambiato:
-            print("⏳ Rilevato aggiornamento API in corso. Attendo completamento del run ECMWF...")
-        return False
+def estrai_limiti_run(hourly_data: dict, param1: str, param2: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
+    times = hourly_data.get("time", [])
+    vals1 = hourly_data.get(param1, [])
+    vals2 = hourly_data.get(param2, [])
 
-def main():
-    print("Scaricamento dati ECMWF (Umidità e Geopotenziale) a 7 giorni in corso...")
-    
+    if not times or not vals1 or not vals2: return False, "", -1, -1
+
+    end_idx1 = -1
+    for i in range(len(vals1) - 1, -1, -1):
+        if vals1[i] is not None:
+            end_idx1 = i
+            break
+            
+    end_idx2 = -1
+    for i in range(len(vals2) - 1, -1, -1):
+        if vals2[i] is not None:
+            end_idx2 = i
+            break
+
+    if end_idx1 == -1 or end_idx1 != end_idx2: 
+        return False, "", -1, -1
+
+    ultima_ora_valida_str = times[end_idx1]
+
+    dt_end_local = datetime.fromisoformat(ultima_ora_valida_str)
+    dt_end_utc = dt_end_local - timedelta(seconds=utc_offset_sec)
+    dt_run_utc = dt_end_utc - timedelta(hours=RUN_DURATION)
+    dt_start_utc = dt_run_utc + timedelta(hours=START_DELAY)
+
+    dt_start_local = dt_start_utc + timedelta(seconds=utc_offset_sec)
+    start_time_str = dt_start_local.strftime("%Y-%m-%dT%H:%M")
+    nome_run = dt_run_utc.strftime("%H") + "Z"
+
+    try:
+        start_idx = times.index(start_time_str)
+    except ValueError:
+        return False, "", -1, -1
+
+    expected_points = RUN_DURATION - START_DELAY + 1
+    actual_points = end_idx1 - start_idx + 1
+
+    if actual_points < expected_points:
+        print(f"⏳ Run {nome_run} in caricamento... ({actual_points}/{expected_points} ore)")
+        return False, "", -1, -1
+
+    if os.path.exists(FILE_LAST_HOUR):
+        with open(FILE_LAST_HOUR, "r") as f:
+            ultima_ora_salvata = f.read().strip()
+        if ultima_ora_valida_str <= ultima_ora_salvata:
+            return False, "", -1, -1
+
+    with open(FILE_LAST_HOUR, "w") as f:
+        f.write(ultima_ora_valida_str)
+
+    return True, nome_run, start_idx, end_idx1
+
+def fetch_dati_con_retry() -> dict:
     URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
-    
     levels = ["925hPa", "850hPa", "700hPa", "600hPa", "500hPa", "400hPa", "300hPa", "250hPa", "200hPa"]
-    
     hourly_vars = []
     for lvl in levels:
         hourly_vars.append(f"relative_humidity_{lvl}")
@@ -87,63 +91,53 @@ def main():
         "hourly": ",".join(hourly_vars),
         "models": "ecmwf_ifs025_ensemble_mean",
         "timezone": "Europe/Rome",
-        "forecast_days": 7
+        "past_days": 1,
+        "forecast_days": 16
     }
-    headers = {"User-Agent": "MeteoBot-ECMWF-RH-Z/1.1"}
+    headers = {"User-Agent": "MeteoBot-ECMWF-RH-Z/3.0"}
 
-    try:
-        response = requests.get(URL, params=params, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        hourly = data.get("hourly", {})
-    except Exception as e:
-        print(f"❌ Errore API: {e}", file=sys.stderr)
-        sys.exit(1)
+    for tentativo in range(3):
+        try:
+            response = requests.get(URL, params=params, headers=headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"⚠️ Errore API: {e}", file=sys.stderr)
+            time.sleep(15)
+    return {}
 
-    if not verifica_dati_nuovi(hourly):
-        print("ℹ️ Nessun aggiornamento completo trovato. Elaborazione fermata.")
-        sys.exit(0)
-        
-    print("ℹ️ Trovati nuovi dati completi per ECMWF Ensemble Mean. Generazione grafici in corso...")
+def main():
+    print("Scaricamento dati ECMWF (Umidità e Geopotenziale)...")
+    data = fetch_dati_con_retry()
     
-    times = pd.to_datetime(hourly.get("time"))
+    if not data: sys.exit(0)
+    hourly = data.get("hourly", {})
+    utc_offset = data.get("utc_offset_seconds", 0)
+    
+    is_new, nome_run, s_idx, e_idx = estrai_limiti_run(hourly, "relative_humidity_850hPa", "geopotential_height_850hPa", utc_offset)
+    if not is_new: sys.exit(0)
+        
+    print(f"ℹ️ Trovati nuovi dati ECMWF {nome_run}. Generazione grafici esatti...")
+    times = pd.to_datetime(hourly.get("time"))[s_idx : e_idx + 1]
 
-    # Invertiamo l'ordine dei livelli per la visualizzazione:
-    # 200hPa in cima al grafico (sub_plot 0), 925hPa in fondo (sub_plot 8)
     plot_levels = ["200hPa", "250hPa", "300hPa", "400hPa", "500hPa", "600hPa", "700hPa", "850hPa", "925hPa"]
     
-    # Palette colori identificativa per ogni quota
     level_colors = {
-        "200hPa": "#9467bd", # Viola
-        "250hPa": "#e377c2", # Rosa
-        "300hPa": "#8c564b", # Marrone
-        "400hPa": "#7f7f7f", # Grigio scuro
-        "500hPa": "#1f77b4", # Blu
-        "600hPa": "#2ca02c", # Verde
-        "700hPa": "#bcbd22", # Oliva
-        "850hPa": "#ff7f0e", # Arancione
-        "925hPa": "#d62728"  # Rosso
+        "200hPa": "#9467bd", "250hPa": "#e377c2", "300hPa": "#8c564b",
+        "400hPa": "#7f7f7f", "500hPa": "#1f77b4", "600hPa": "#2ca02c",
+        "700hPa": "#bcbd22", "850hPa": "#ff7f0e", "925hPa": "#d62728" 
     }
 
-    # Creazione della matrice 9 righe x 1 colonna (Grafico molto alto per non schiacciare le righe)
     fig, axs = plt.subplots(9, 1, figsize=(14, 30), sharex=True)
 
     def applica_spaziatura_asimmetrica(ax_rh, ax_z, z_arr):
-        """Umidità fissa 0-100 nel 45% superiore. Geopotenziale dinamico nel 45% inferiore."""
-        
-        # 1. Spaziatura Asse Umidità (Superiore, range fisso 0-100)
-        # Se 100 unità devono occupare il 45% dello spazio, lo spazio totale è 100 / 0.45 = 222.22
-        # Il limite alto è 100. Il limite basso è 100 - 222.22 = -122.22
         ax_rh.set_ylim(100 - (100 / 0.45), 100)
-        # Mostriamo SOLO i numeri e la griglia per i valori tra 0 e 100
         ax_rh.set_yticks([0, 25, 50, 75, 100])
 
-        # 2. Spaziatura Asse Geopotenziale (Inferiore, dinamico sui dati reali)
         if z_arr is not None and len(z_arr) > 0 and not np.isnan(z_arr).all():
             z_min, z_max = np.nanmin(z_arr), np.nanmax(z_arr)
             r_z = z_max - z_min if (z_max - z_min) > 0 else 50.0
             limite_basso_z = z_min - 0.05 * r_z
-            # Il limite alto sale molto oltre i dati per "schiacciare" la curva verso il basso
             limite_alto_z = limite_basso_z + (r_z / 0.45)
             ax_z.set_ylim(limite_basso_z, limite_alto_z)
 
@@ -152,45 +146,35 @@ def main():
         ax_z = ax.twinx()
         color = level_colors[lvl]
         
-        # Estrazione dati
         rh_raw = hourly.get(f"relative_humidity_{lvl}")
         z_raw = hourly.get(f"geopotential_height_{lvl}")
         
-        rh_arr = np.array(rh_raw, dtype=float) if rh_raw else None
-        z_arr = np.array(z_raw, dtype=float) if z_raw else None
+        rh_arr = np.array(rh_raw[s_idx : e_idx + 1], dtype=float) if rh_raw else None
+        z_arr = np.array(z_raw[s_idx : e_idx + 1], dtype=float) if z_raw else None
         
-        # Plot Umidità (Asse Sinistro - Linea Continua SENZA riempimento)
         if rh_arr is not None:
             ax.plot(times, rh_arr, color="#1f77b4", linewidth=2.5, linestyle='-', label=f"Umidità Rel. (%)")
             
-        # Plot Geopotenziale (Asse Destro - Linea Tratteggiata e Colorata per Livello)
         if z_arr is not None:
             ax_z.plot(times, z_arr, color=color, linewidth=2.5, linestyle='--', label=f"Geopotenziale {lvl}")
 
-        # Applica la spaziatura con i calcoli del 45%
         applica_spaziatura_asimmetrica(ax, ax_z, z_arr)
         
-        # Formattazione Asse Sinistro (RH)
         ax.set_ylabel("Umid. %", fontsize=11, color="#1f77b4", fontweight='bold')
         ax.tick_params(axis='y', labelcolor="#1f77b4")
         ax.grid(True, linestyle='--', alpha=0.5)
         
-        # Formattazione Asse Destro (Z)
         ax_z.set_ylabel(f"Geop. {lvl} (m)", fontsize=11, color=color, fontweight='bold')
         ax_z.tick_params(axis='y', labelcolor=color)
 
-        # Unione Legende
         lines_1, labels_1 = ax.get_legend_handles_labels()
         lines_2, labels_2 = ax_z.get_legend_handles_labels()
         ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left', fontsize=10, ncol=2)
-        
-        # Titolo in alto per ogni subplot
         ax.set_title(f"Sezione {lvl}", fontsize=12, fontweight='bold', loc='right')
 
-    # Formattazione Asse X Finale
-    titolo_in_basso = "ECMWF Ensemble Mean - Colonna Atmosferica: Umidità vs Geopotenziale (7 Giorni)"
+    lunghezza_effettiva = len(times) - 1
+    titolo_in_basso = f"ECMWF Mean ({lunghezza_effettiva}h) - RH vs Geopotenziale   |   Data/Ora (Locale)"
     axs[-1].set_xlabel(titolo_in_basso, fontsize=14, fontweight='bold', labelpad=15)
-
     axs[-1].xaxis.set_major_locator(mdates.DayLocator())
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
     axs[-1].xaxis.set_minor_locator(mdates.HourLocator(byhour=[12]))
@@ -199,42 +183,24 @@ def main():
     plt.xticks(rotation=45)
     plt.tight_layout()
     plt.savefig(FILENAME, dpi=200, bbox_inches='tight')
-    print(f"Grafico salvato come {FILENAME}")
 
-    # --- INVIO A TELEGRAM ---
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     thread_id = os.getenv("TELEGRAM_THREAD_ID_ECMWF")
 
     if token and chat_id:
-        print("Invio grafico su Telegram in corso...")
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
-
         payload = {
             "chat_id": chat_id,
-            "caption": "ECMWF RH (mean)",
+            "caption": f"ECMWF RH (mean) ({nome_run})",
             "parse_mode": "HTML"
         }
-        
-        if thread_id:
-            payload["message_thread_id"] = thread_id
-
+        if thread_id: payload["message_thread_id"] = thread_id
         try:
             with open(FILENAME, "rb") as photo:
-                res = requests.post(
-                    url_telegram,
-                    data=payload,
-                    files={"photo": photo}
-                )
-
-                if res.status_code == 200:
-                    print("✅ Grafico inviato con successo su Telegram!")
-                else:
-                    print(f"⚠️ Errore API Telegram ({res.status_code}): {res.text}")
-        except Exception as e:
-            print(f"❌ Eccezione durante l'invio a Telegram: {e}")
-    else:
-        print("ℹ️ Credenziali Telegram mancanti, skip invio.")
+                requests.post(url_telegram, data=payload, files={"photo": photo})
+        except Exception:
+            pass 
 
 if __name__ == "__main__":
     main()
