@@ -49,7 +49,7 @@ def main():
     ax1.tick_params(axis='y', labelcolor='#005a9c')
     ax1.set_xticks(x)
     ax1.set_xticklabels(mesi)
-    ax1.set_ylim(0, max(climatology['precip']) * 1.6)
+    ax1.set_ylim(0, max(climatology['precip']) * 1.1)
 
     ax2 = ax1.twinx()
     color_tmax = '#d62728'
