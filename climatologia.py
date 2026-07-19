@@ -11,7 +11,6 @@ LOCK_FILE = "lock_report_inviati.txt"
 
 # --- FUNZIONI GRAFICHE E DI TESTO ---
 def genera_dettaglio_classifica(df, year_target, metric, diff, unit, metric_type="default"):
-    # Se stiamo misurando una serie consecutiva (streak), il valore più alto è sempre il più estremo
     if metric_type == "streak":
         ascending_order = False
         tipo = "serie più lunga"
@@ -34,7 +33,6 @@ def genera_dettaglio_classifica(df, year_target, metric, diff, unit, metric_type
     else:
         base_text = f"**{pos}°** {tipo}"
 
-    # Regole di visualizzazione Top 5
     if pos > 5: return base_text
     if pos == 1: return f"{base_text} [🏆 Record dal 1940!]"
     
@@ -48,7 +46,7 @@ def genera_dettaglio_classifica(df, year_target, metric, diff, unit, metric_type
     else:
         dettagli_str = ", ".join(details)
         
-    return f"{base_text} [dietro al {dettagli_str}]"
+    return f"{base_text} [_dietro al {dettagli_str}_]"
 
 def generate_dashboard(tmax, tmin, precip, diff_tmax, diff_tmin, diff_precip, title, filename):
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -82,14 +80,12 @@ def generate_dashboard(tmax, tmin, precip, diff_tmax, diff_tmin, diff_precip, ti
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.close()
 
-# Helper per le serie consecutive (Streaks)
 def get_max_streak(s):
     if not s.any(): return 0
     return int(s.groupby((~s).cumsum()).sum().max())
 
 # --- MOTORE DI CALCOLO ---
 def process_period(period_type, target_year, target_month=None, target_season=None):
-    # 1. Definizione Date e ID Univoco per il Lock
     is_summer, is_winter = False, False
     
     if period_type == 'month':
@@ -130,7 +126,6 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         lock_id = f"year_{target_year}"
         is_summer, is_winter = True, True
 
-    # Controllo Lock File
     if os.path.exists(LOCK_FILE):
         with open(LOCK_FILE, "r") as f:
             inviati = f.read().splitlines()
@@ -140,7 +135,6 @@ def process_period(period_type, target_year, target_month=None, target_season=No
 
     print(f"\n🚀 Elaborazione {nome_periodo} in corso...")
 
-    # 2. Scarico API per l'anno in corso
     url = f"https://archive-api.open-meteo.com/v1/archive?latitude=45.07347491421504&longitude=7.543461388723449&start_date={start_date}&end_date={end_date}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&models=era5_seamless&timezone=auto"
     try:
         res = requests.get(url)
@@ -154,7 +148,6 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         print(f"❌ Errore API: {e}") 
         return
 
-    # 3. Elaborazione Dati Storici (Giorno per Giorno dal 1940)
     try:
         df_storico = pd.read_csv('open-meteo-45.10N7.50E326m_1940_2025.csv', skiprows=3)
         df_storico.columns = ['date', 'tmax', 'tmin', 'precip']
@@ -162,23 +155,18 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         df_storico['year'] = df_storico['date'].dt.year
         df_storico['month'] = df_storico['date'].dt.month
 
-        # Rimuoviamo l'anno corrente dallo storico per evitare duplicati, poi fondiamo tutto
         df_storico = df_storico[df_storico['year'] != target_year]
         full_df = pd.concat([df_storico, api_df[['date', 'year', 'month', 'tmax', 'tmin', 'precip']]], ignore_index=True)
 
-        # Filtriamo solo i mesi di interesse per questo report
         df_filt = full_df[full_df['month'].isin(months_to_filter)].copy()
         
-        # Correzione anno per l'Inverno (Dicembre è calcolato insieme a Gen/Feb dell'anno dopo)
         if period_type == 'season' and target_season == 'winter':
             df_filt['group_year'] = np.where(df_filt['month'] == 12, df_filt['year'] + 1, df_filt['year'])
         else:
             df_filt['group_year'] = df_filt['year']
 
-        # Ordinamento vitale per calcolare correttamente le serie consecutive
         df_filt = df_filt.sort_values('date')
 
-        # Calcolo di Tutte le Statistiche Anno per Anno
         stats_list = []
         for yr, group in df_filt.groupby('group_year'):
             stats_list.append({
@@ -186,12 +174,10 @@ def process_period(period_type, target_year, target_month=None, target_season=No
                 'tmax': group['tmax'].mean(),
                 'tmin': group['tmin'].mean(),
                 'precip': group['precip'].sum(),
-                # Indicatori Estivi
                 'trop_n': (group['tmin'] >= 20).sum(),
                 'trop_s': get_max_streak(group['tmin'] >= 20),
                 'hot_d': (group['tmax'] >= 30).sum(),
                 'hot_s': get_max_streak(group['tmax'] >= 30),
-                # Indicatori Invernali
                 'frost_d': (group['tmin'] < 0).sum(),
                 'frost_s': get_max_streak(group['tmin'] < 0),
                 'ice_d': (group['tmax'] <= 0).sum(),
@@ -200,14 +186,10 @@ def process_period(period_type, target_year, target_month=None, target_season=No
             
         totale_anni = pd.DataFrame(stats_list)
 
-        # Rimuove il 1940 se è inverno perché manca Dicembre 1939
         if period_type == 'season' and target_season == 'winter':
             totale_anni = totale_anni[totale_anni['year'] > totale_anni['year'].min()]
 
-        # Costruiamo la Baseline 1991-2020 dinamica
         baseline = totale_anni[(totale_anni['year'] >= 1991) & (totale_anni['year'] <= 2020)].mean()
-
-        # Estraiamo l'anno corrente
         curr = totale_anni[totale_anni['year'] == target_year].iloc[0]
 
         diff_tmax = curr['tmax'] - baseline['tmax']
@@ -223,7 +205,6 @@ def process_period(period_type, target_year, target_month=None, target_season=No
                             f"❄️ T. Minima: {testo_tmin}\n"
                             f"🌧 Precipitazioni: {testo_precip}")
                             
-        # --- BLOCCO ESTREMI STAGIONALI ---
         if is_summer:
             r_trop = genera_dettaglio_classifica(totale_anni, target_year, 'trop_s', curr['trop_s'] - baseline['trop_s'], "giorni", metric_type="streak")
             r_hot = genera_dettaglio_classifica(totale_anni, target_year, 'hot_s', curr['hot_s'] - baseline['hot_s'], "giorni", metric_type="streak")
@@ -250,7 +231,6 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         diff_tmax = diff_tmin = diff_precip = 0
         curr = {'tmax': api_df['tmax'].mean(), 'tmin': api_df['tmin'].mean(), 'precip': api_df['precip'].sum()}
 
-    # 4. Dashboard e Telegram
     title = f"Report Climatico: {nome_periodo} vs Storico 1991-2020"
     filename = f"report_{lock_id}.png"
     generate_dashboard(curr['tmax'], curr['tmin'], curr['precip'], diff_tmax, diff_tmin, diff_precip, title, filename)
@@ -276,37 +256,21 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
 
-# --- ESECUZIONE ---
+# --- ESECUZIONE 100% AUTOMATICA ---
 def main():
-    run_type = os.getenv('RUN_TYPE', 'auto')
+    oggi = datetime.now()
+    # Sottraiamo 15 giorni per elaborare sempre il mese precedente
+    data_target = oggi - timedelta(days=15)
+    m_target, y_target = data_target.month, data_target.year
     
-    if run_type == 'recover_all_2026':
-        print("Inizio Recupero Totale 2026...")
-        for m in range(1, 7): process_period('month', 2026, target_month=m)
-        process_period('season', 2026, target_season='winter')
-        process_period('season', 2026, target_season='spring')
-        print("🎉 Recupero Completato!")
-        return
-        
-    if run_type == 'recover_month':
-        process_period('month', int(os.getenv('TARGET_YEAR')), target_month=int(os.getenv('TARGET_MONTH')))
-    elif run_type == 'recover_season':
-        process_period('season', int(os.getenv('TARGET_YEAR')), target_season=os.getenv('TARGET_SEASON'))
-    elif run_type == 'recover_year':
-        process_period('year', int(os.getenv('TARGET_YEAR')))
-        
-    elif run_type == 'auto':
-        oggi = datetime.now()
-        data_target = oggi - timedelta(days=15)
-        m_target, y_target = data_target.month, data_target.year
-        
-        process_period('month', y_target, target_month=m_target)
-        
-        if m_target == 2: process_period('season', y_target, target_season='winter')
-        elif m_target == 5: process_period('season', y_target, target_season='spring')
-        elif m_target == 8: process_period('season', y_target, target_season='summer')
-        elif m_target == 11: process_period('season', y_target, target_season='autumn')
-        if m_target == 12: process_period('year', y_target)
+    process_period('month', y_target, target_month=m_target)
+    
+    if m_target == 2: process_period('season', y_target, target_season='winter')
+    elif m_target == 5: process_period('season', y_target, target_season='spring')
+    elif m_target == 8: process_period('season', y_target, target_season='summer')
+    elif m_target == 11: process_period('season', y_target, target_season='autumn')
+    
+    if m_target == 12: process_period('year', y_target)
 
 if __name__ == "__main__":
     main()
