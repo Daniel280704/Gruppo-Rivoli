@@ -61,7 +61,7 @@ def format_extreme(name, count, streak, df_storico, year_target, metric_name):
                 details_str = ", ".join(details[:10]) + f", ...e altri {len(details)-10}"
             else:
                 details_str = ", ".join(details)
-            streak_text = f"({base_streak}, **{pos}°** serie più lunga [_dietro al {details_str}_])"
+            streak_text = f"({base_streak}, **{pos}°** serie più lunga [dietro al {details_str}])"
         else:
             # Posizione tra 6 e 10 (solo rank, no lista anni)
             streak_text = f"({base_streak}, **{pos}°** serie più lunga)"
@@ -276,13 +276,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
 def main():
     print("Avvio elaborazione forzata batch climatico...")
     
-   
-    # 5. Marzo 2026
-    process_period('month', 2026, target_month=3)
-    # 6. Aprile 2026
-    process_period('month', 2026, target_month=4)
-    # 7. Maggio 2026
-    process_period('month', 2026, target_month=5)
+
     # 8. Giugno 2026
     process_period('month', 2026, target_month=6)
 
