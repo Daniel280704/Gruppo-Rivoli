@@ -2,7 +2,7 @@ name: "Generazione Excel Profilo Atmosferico"
 
 on:
   schedule:
-    - cron: '45 */3 * * *' 
+    - cron: '45 * * * *' 
   workflow_dispatch:
 
 jobs:
