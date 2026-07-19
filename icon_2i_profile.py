@@ -17,8 +17,8 @@ LONGITUDE = 7.543461388723449
 FILE_LAST_HOUR = "ultima_ora_icon_2i.txt"
 FILENAME = "icon_2i_profile.png"
 
-# Regole fisse da tabella per ICON-2I
-RUN_DURATION = 71
+# Corretto a 72 ore piene (riallinea il nome del Run a 00Z/12Z e il primo dato alle ore 2:00)
+RUN_DURATION = 72
 START_DELAY = 0
 
 def estrai_limiti_run(hourly_data: dict, ref_param: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
@@ -87,7 +87,7 @@ def fetch_dati_con_retry() -> dict:
         "past_days": 1,
         "forecast_days": 4
     }
-    headers = {"User-Agent": "MeteoBot-ICON2I/3.0"}
+    headers = {"User-Agent": "MeteoBot-ICON2I/3.1"}
 
     for tentativo in range(3):
         try:
