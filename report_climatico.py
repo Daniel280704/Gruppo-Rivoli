@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import calendar
 import pandas as pd
@@ -38,9 +39,7 @@ def genera_dettaglio_classifica(df, year_target, metric, diff, unit):
         
     return f"{base_text} [dietro al {dettagli_str}]"
 
-# --- LOGICA ESTREMI UNIVERSALE (Senza Medie e Senza Stagioni) ---
 def format_extreme(name, count, streak, df_storico, year_target, metric_name):
-    # Se le ricorrenze sono zero, non stampiamo nulla
     if count == 0:
         return ""
     
@@ -50,7 +49,6 @@ def format_extreme(name, count, streak, df_storico, year_target, metric_name):
     
     base_streak = f"max {int(streak)} consecutivi"
     
-    # Logica di visualizzazione Top 10 e Top 5
     if pos <= 10:
         if pos == 1:
             streak_text = f"({base_streak}, 🏆 Record dal 1940!)"
@@ -63,13 +61,44 @@ def format_extreme(name, count, streak, df_storico, year_target, metric_name):
                 details_str = ", ".join(details)
             streak_text = f"({base_streak}, **{pos}°** serie più lunga [dietro al {details_str}])"
         else:
-            # Posizione tra 6 e 10 (solo rank, no lista anni dietro a chi)
             streak_text = f"({base_streak}, **{pos}°** serie più lunga)"
     else:
-        # Fuori dalla top 10 (solo numero consecutivi)
         streak_text = f"({base_streak})"
         
     return f"{name}: {int(count)} {streak_text}\n"
+
+# --- LOGICA PICCHI GIORNALIERI (TOP 5) ---
+def check_daily_extreme(df_daily, target_year, metric, is_hot):
+    if df_daily.empty: return ""
+    
+    # Isola i dati dell'anno target per trovare il picco
+    df_target = df_daily[df_daily['group_year'] == target_year]
+    if df_target.empty: return ""
+    
+    curr_val = df_target[metric].max() if is_hot else df_target[metric].min()
+    # Prende la prima data in caso di picchi identici nello stesso anno
+    curr_date = df_target[df_target[metric] == curr_val]['date'].iloc[0]
+    
+    # Ordina l'intero database storico (tutti i giorni dal 1940)
+    df_sorted = df_daily.sort_values(by=metric, ascending=not is_hot).reset_index(drop=True)
+    idx = df_sorted[df_sorted['date'] == curr_date].index[0]
+    pos = idx + 1
+    
+    # Escludi se non è in Top 5
+    if pos > 5:
+        return ""
+        
+    tipo = "T. Massima" if metric == 'tmax' else "T. Minima"
+    termine = "calda" if is_hot else "fredda"
+    base_text = f"**{pos}°** giornata con {tipo} più {termine} di sempre ({curr_val:.1f} °C il {curr_date.strftime('%d/%m/%Y')})"
+    
+    if pos == 1:
+        return f"🚨 {base_text} [🏆 Record dal 1940!]\n"
+        
+    rows_above = df_sorted.iloc[:idx]
+    details = [f"{row['date'].strftime('%d/%m/%Y')} ({row[metric]:.1f} °C)" for _, row in rows_above.iterrows()]
+    
+    return f"🌡 {base_text} [_dietro al {', '.join(details)}_]\n"
 
 def generate_dashboard(tmax, tmin, precip, diff_tmax, diff_tmin, diff_precip, title, filename):
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -152,7 +181,8 @@ def process_period(period_type, target_year, target_month=None, target_season=No
 
     print(f"\n🚀 Elaborazione {nome_periodo} in corso...")
 
-    url = f"https://archive-api.open-meteo.com/v1/archive?latitude=45.07347491421504&longitude=7.543461388723449&start_date={start_date}&end_date={end_date}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&models=era5_seamless&timezone=auto"
+    # Aggiornate le coordinate per Torino centro (Lat 45.0703, Lon 7.6869)
+    url = f"https://archive-api.open-meteo.com/v1/archive?latitude=45.0703&longitude=7.6869&start_date={start_date}&end_date={end_date}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&models=era5_seamless&timezone=auto"
     try:
         res = requests.get(url)
         res.raise_for_status()
@@ -166,13 +196,13 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         return
 
     try:
-        df_storico = pd.read_csv('open-meteo-45.10N7.50E326m_1940_2025.csv', skiprows=3)
+        # Assicurati di scaricare questo nuovo CSV e caricarlo su GitHub
+        df_storico = pd.read_csv('open-meteo-torino-centro_1940_2025.csv', skiprows=3)
         df_storico.columns = ['date', 'tmax', 'tmin', 'precip']
         df_storico['date'] = pd.to_datetime(df_storico['date'])
         df_storico['year'] = df_storico['date'].dt.year
         df_storico['month'] = df_storico['date'].dt.month
 
-        # Rimuoviamo l'anno corrente per poi incollare i dati freschi API
         df_storico = df_storico[~((df_storico['year'] == target_year) | (df_storico['year'] == target_year-1))]
         full_df = pd.concat([df_storico, api_df[['date', 'year', 'month', 'tmax', 'tmin', 'precip']]], ignore_index=True)
 
@@ -223,15 +253,22 @@ def process_period(period_type, target_year, target_month=None, target_season=No
                             f"❄️ T. Minima: {testo_tmin}\n"
                             f"🌧 Precipitazioni: {testo_precip}")
                             
-        # --- BLOCCO ESTREMI AGGIORNATO (INDIPENDENTE DALLA STAGIONE) ---
-        txt_trop = format_extreme("🥵 Notti Tropicali (Tmin >= 20°C)", curr['trop_n'], curr['trop_s'], totale_anni, target_year, 'trop_s')
-        txt_hot = format_extreme("☀️ Giorni Roventi (Tmax >= 30°C)", curr['hot_d'], curr['hot_s'], totale_anni, target_year, 'hot_s')
+        # --- PICCHI GIORNALIERI ASSOLUTI (TOP 5) ---
+        txt_picco_max = check_daily_extreme(df_filt, target_year, 'tmax', is_hot=True)
+        txt_picco_min = check_daily_extreme(df_filt, target_year, 'tmin', is_hot=False)
+        
+        if txt_picco_max or txt_picco_min:
+            testo_classifica += f"\n\n📈 **Record Giornalieri Raggiunti**\n{txt_picco_max}{txt_picco_min}"
+                            
+        # --- ESTREMI AGGIORNATI ---
+        txt_trop = format_extreme("🥵 Notti tropicali", curr['trop_n'], curr['trop_s'], totale_anni, target_year, 'trop_s')
+        txt_hot = format_extreme("☀️ Giorni roventi", curr['hot_d'], curr['hot_s'], totale_anni, target_year, 'hot_s')
         
         if txt_trop or txt_hot:
             testo_classifica += f"\n\n🏖 **Estremi di Caldo**\n{txt_trop}{txt_hot}"
 
-        txt_frost = format_extreme("🥶 Giorni di Gelo (Tmin < 0°C)", curr['frost_d'], curr['frost_s'], totale_anni, target_year, 'frost_s')
-        txt_ice = format_extreme("🧊 Giorni di Ghiaccio (Tmax <= 0°C)", curr['ice_d'], curr['ice_s'], totale_anni, target_year, 'ice_s')
+        txt_frost = format_extreme("🥶 Notti di gelo", curr['frost_d'], curr['frost_s'], totale_anni, target_year, 'frost_s')
+        txt_ice = format_extreme("🧊 Giorni di ghiaccio", curr['ice_d'], curr['ice_s'], totale_anni, target_year, 'ice_s')
         
         if txt_frost or txt_ice:
             testo_classifica += f"\n\n❄️ **Estremi di Freddo**\n{txt_frost}{txt_ice}"
@@ -251,7 +288,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
     thread_id = os.getenv("TELEGRAM_THREAD_ID_STORIA") 
     
     if token and chat_id:
-        caption = f"📊 **Report Climatico: {nome_periodo}**\nAnalisi delle anomalie climatiche per Rivoli.{testo_classifica}"
+        caption = f"📊 **Report Climatico: {nome_periodo}**\nAnalisi delle anomalie climatiche per Torino Centro.{testo_classifica}"
         payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}
         if thread_id: payload["message_thread_id"] = thread_id
         try:
@@ -267,29 +304,33 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
 
-# --- ESECUZIONE 100% AUTOMATICA (Calendario Perpetuo) ---
+# --- ESECUZIONE FORZATA BATCH ---
 def main():
-    oggi = datetime.now()
-    # Sottraendo 15 giorni siamo certi matematicamente di far cadere i calcoli nel mese solare appena concluso
-    data_target = oggi - timedelta(days=15)
-    m_target, y_target = data_target.month, data_target.year
+    print("Avvio elaborazione forzata batch climatico con pause per evitare limiti API e bot Telegram...")
     
-    # 1. Elabora sempre il mese precedente
-    process_period('month', y_target, target_month=m_target)
+    process_period('month', 2025, target_month=12)
+    print("In attesa 30 secondi..."); time.sleep(30)
     
-    # 2. Controlla se il mese chiuso conclude anche una stagione meteorologica
-    if m_target == 2: 
-        process_period('season', y_target, target_season='winter')
-    elif m_target == 5: 
-        process_period('season', y_target, target_season='spring')
-    elif m_target == 8: 
-        process_period('season', y_target, target_season='summer')
-    elif m_target == 11: 
-        process_period('season', y_target, target_season='autumn')
+    process_period('month', 2026, target_month=1)
+    print("In attesa 30 secondi..."); time.sleep(30)
     
-    # 3. Controlla se chiude un intero anno solare
-    if m_target == 12: 
-        process_period('year', y_target)
+    process_period('month', 2026, target_month=2)
+    print("In attesa 30 secondi..."); time.sleep(30)
+    
+    process_period('season', 2026, target_season='winter')
+    print("In attesa 30 secondi..."); time.sleep(30)
+    
+    process_period('month', 2026, target_month=3)
+    print("In attesa 30 secondi..."); time.sleep(30)
+    
+    process_period('month', 2026, target_month=4)
+    print("In attesa 30 secondi..."); time.sleep(30)
+    
+    process_period('month', 2026, target_month=5)
+    print("In attesa 30 secondi..."); time.sleep(30)
+    
+    process_period('month', 2026, target_month=6)
+    print("Lancio batch completato!")
 
 if __name__ == "__main__":
     main()
