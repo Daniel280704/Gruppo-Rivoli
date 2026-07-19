@@ -11,8 +11,8 @@ import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 # Coordinate esatte richieste
-LAT = 45.07347491421504
-LON = 7.543461388723449
+LATITUDE = 45.07347491421504
+LONGITUDE = 7.543461388723449
 
 # Nuovo file di appoggio per salvare solo il giorno (YYYY-MM-DD)
 FILE_LAST_DAY = "ultimo_giorno_air_quality.txt"
