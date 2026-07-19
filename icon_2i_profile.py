@@ -16,52 +16,58 @@ LONGITUDE = 7.543461388723449
 
 FILE_LAST_HOUR = "ultima_ora_icon_2i.txt"
 FILENAME = "icon_2i_profile.png"
-ORIZZONTE_ORE = 72
 
-def verifica_nuovo_run(hourly_data: dict, ref_param: str) -> tuple[bool, str]:
+# Regole fisse da tabella per ICON-2I
+RUN_DURATION = 71
+START_DELAY = 0
+
+def estrai_limiti_run(hourly_data: dict, ref_param: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
     times = hourly_data.get("time", [])
     mean_vals = hourly_data.get(ref_param, [])
-    spread_vals = hourly_data.get(f"{ref_param}_spread", [])
 
-    if not times or not mean_vals:
-        return False, ""
+    if not times or not mean_vals: return False, "", -1, -1
 
-    idx_mean = -1
+    end_idx = -1
     for i in range(len(mean_vals) - 1, -1, -1):
         if mean_vals[i] is not None:
-            idx_mean = i
+            end_idx = i
             break
 
-    if spread_vals:
-        idx_spread = -1
-        for i in range(len(spread_vals) - 1, -1, -1):
-            if spread_vals[i] is not None:
-                idx_spread = i
-                break
-        if idx_mean != idx_spread:
-            return False, ""
+    if end_idx == -1: return False, "", -1, -1
 
-    if idx_mean == -1:
-        return False, ""
+    ultima_ora_valida_str = times[end_idx]
 
-    ultima_ora_valida = times[idx_mean]
+    dt_end_local = datetime.fromisoformat(ultima_ora_valida_str)
+    dt_end_utc = dt_end_local - timedelta(seconds=utc_offset_sec)
+    dt_run_utc = dt_end_utc - timedelta(hours=RUN_DURATION)
+    dt_start_utc = dt_run_utc + timedelta(hours=START_DELAY)
+
+    dt_start_local = dt_start_utc + timedelta(seconds=utc_offset_sec)
+    start_time_str = dt_start_local.strftime("%Y-%m-%dT%H:%M")
+    nome_run = dt_run_utc.strftime("%H") + "Z"
+
+    try:
+        start_idx = times.index(start_time_str)
+    except ValueError:
+        return False, "", -1, -1
+
+    expected_points = RUN_DURATION - START_DELAY + 1
+    actual_points = end_idx - start_idx + 1
+
+    if actual_points < expected_points:
+        print(f"⏳ Run {nome_run} in caricamento... ({actual_points}/{expected_points} ore)")
+        return False, "", -1, -1
 
     if os.path.exists(FILE_LAST_HOUR):
         with open(FILE_LAST_HOUR, "r") as f:
             ultima_ora_salvata = f.read().strip()
-        if ultima_ora_valida <= ultima_ora_salvata:
-            return False, ultima_ora_valida
+        if ultima_ora_valida_str <= ultima_ora_salvata:
+            return False, "", -1, -1
 
     with open(FILE_LAST_HOUR, "w") as f:
-        f.write(ultima_ora_valida)
+        f.write(ultima_ora_valida_str)
 
-    return True, ultima_ora_valida
-
-def ottieni_nome_run(ultima_ora_valida_str: str, utc_offset_sec: int, orizzonte_ore: int) -> str:
-    dt_local = datetime.fromisoformat(ultima_ora_valida_str)
-    dt_utc = dt_local - timedelta(seconds=utc_offset_sec)
-    dt_run = dt_utc - timedelta(hours=orizzonte_ore)
-    return dt_run.strftime("%H") + "Z"
+    return True, nome_run, start_idx, end_idx
 
 def fetch_dati_con_retry() -> dict:
     URL = "https://api.open-meteo.com/v1/forecast"
@@ -78,9 +84,10 @@ def fetch_dati_con_retry() -> dict:
         "hourly": ",".join(var_list),
         "models": "italia_meteo_arpae_icon_2i",
         "timezone": "Europe/Rome",
-        "forecast_days": 3
+        "past_days": 1,
+        "forecast_days": 4
     }
-    headers = {"User-Agent": "MeteoBot-ICON2I/2.0"}
+    headers = {"User-Agent": "MeteoBot-ICON2I/3.0"}
 
     for tentativo in range(3):
         try:
@@ -88,36 +95,28 @@ def fetch_dati_con_retry() -> dict:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"⚠️ Errore API (Tentativo {tentativo + 1}/3): {e}", file=sys.stderr)
-            if tentativo < 2:
-                time.sleep(15)
+            print(f"⚠️ Errore API: {e}", file=sys.stderr)
+            time.sleep(15)
     return {}
 
 def main():
     print("Scaricamento dati ICON-2I Deterministico...")
     data = fetch_dati_con_retry()
     
-    if not data:
-        print("❌ Impossibile ottenere i dati dal server. Uscita silenziosa.")
-        sys.exit(0)
-
+    if not data: sys.exit(0)
     hourly = data.get("hourly", {})
-    
-    is_new, ultima_ora = verifica_nuovo_run(hourly, "temperature_2m")
-    if not is_new:
-        print("⏳ Nessun nuovo run completo per ICON-2I. Uscita silenziosa.")
-        sys.exit(0)
-        
     utc_offset = data.get("utc_offset_seconds", 0)
-    nome_run = ottieni_nome_run(ultima_ora, utc_offset, ORIZZONTE_ORE)
+    
+    is_new, nome_run, s_idx, e_idx = estrai_limiti_run(hourly, "temperature_2m", utc_offset)
+    if not is_new: sys.exit(0)
         
-    print(f"ℹ️ Trovato nuovo run ICON-2I {nome_run}. Generazione del grafico...")
-    times = pd.to_datetime(hourly.get("time"))
+    print(f"ℹ️ Trovato nuovo run ICON-2I {nome_run}. Generazione del grafico esatto...")
+    times = pd.to_datetime(hourly.get("time"))[s_idx : e_idx + 1]
 
     def get_arr(var_name):
         arr_data = hourly.get(var_name)
         if not arr_data: return None
-        return np.array([np.nan if v is None else v for v in arr_data], dtype=float)
+        return np.array([np.nan if v is None else v for v in arr_data[s_idx : e_idx + 1]], dtype=float)
 
     fig, axs = plt.subplots(6, 1, figsize=(14, 30), sharex=True)
 
@@ -131,13 +130,12 @@ def main():
             r_b = arr_bot_max - arr_bot_min if (arr_bot_max - arr_bot_min) > 0 else 5.0
             ax_bot.set_ylim(arr_bot_min - 0.05 * r_b, (arr_bot_min - 0.05 * r_b) + (r_b / 0.45))
 
-    ax1 = axs[0]
-    ax1_dew = ax1.twinx()
+    ax1 = axs[0]; ax1_dew = ax1.twinx()
     t2m, dew = get_arr("temperature_2m"), get_arr("dew_point_2m")
     if t2m is not None: ax1.plot(times, t2m, color="#d62728", linewidth=2.8, label='Temp 2m (°C)')
     if dew is not None: ax1_dew.plot(times, dew, color="#2ca02c", linewidth=2.8, linestyle='-', label='Dew Point 2m (°C)')
     applica_spaziatura_asimmetrica(ax1, ax1_dew, t2m, dew)
-    ax1.set_ylabel("Temperatura 2m (°C)", fontsize=11, color="#d62728", fontweight='bold')
+    ax1.set_ylabel("Temp 2m (°C)", fontsize=11, color="#d62728", fontweight='bold')
     ax1_dew.set_ylabel("Dew Point 2m (°C)", fontsize=11, color="#2ca02c", fontweight='bold')
     ax1.grid(True, linestyle='--', alpha=0.5)
     lines_1, labels_1 = ax1.get_legend_handles_labels()
@@ -145,8 +143,7 @@ def main():
     ax1.legend(lines_1 + lines_1_dew, labels_1 + labels_1_dew, loc='upper left', fontsize=10, ncol=2)
     ax1.set_title("Temperatura e Punto di Rugiada al Suolo (2m)", fontsize=13, fontweight='bold')
 
-    ax2 = axs[1]
-    ax2_z = ax2.twinx()
+    ax2 = axs[1]; ax2_z = ax2.twinx()
     t850, z850 = get_arr("temperature_850hPa"), get_arr("geopotential_height_850hPa")
     if t850 is not None: ax2.plot(times, t850, color="#ff7f0e", linewidth=2.8, label='Temp 850hPa (°C)')
     if z850 is not None: ax2_z.plot(times, z850, color="#8c564b", linewidth=2.8, linestyle='--', label='Geop 850hPa (m)')
@@ -159,8 +156,7 @@ def main():
     ax2.legend(lines_2 + lines_2_z, labels_2 + labels_2_z, loc='upper left', fontsize=10, ncol=2)
     ax2.set_title("Sezione Bassa Troposfera (850 hPa)", fontsize=13, fontweight='bold')
 
-    ax3 = axs[2]
-    ax3_z = ax3.twinx()
+    ax3 = axs[2]; ax3_z = ax3.twinx()
     t500, z500 = get_arr("temperature_500hPa"), get_arr("geopotential_height_500hPa")
     if t500 is not None: ax3.plot(times, t500, color="#1f77b4", linewidth=2.8, label='Temp 500hPa (°C)')
     if z500 is not None: ax3_z.plot(times, z500, color="#9467bd", linewidth=2.8, linestyle='--', label='Geop 500hPa (m)')
@@ -207,7 +203,8 @@ def main():
     ax6.legend(loc='upper left', fontsize=10)
     ax6.set_title("Accumulo Orario Precipitazioni", fontsize=13, fontweight='bold')
 
-    titolo_in_basso = "Modello ItaliaMeteo ICON-2I (72h)   |   Data e Ora (Fuso Orario Locale)"
+    lunghezza_effettiva = len(times) - 1
+    titolo_in_basso = f"Modello ItaliaMeteo ICON-2I ({lunghezza_effettiva}h)   |   Data e Ora (Fuso Orario Locale)"
     axs[-1].set_xlabel(titolo_in_basso, fontsize=12, fontweight='bold', labelpad=15)
     axs[-1].xaxis.set_major_locator(mdates.HourLocator(interval=6))
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter('%H:00\n%d %b'))
@@ -223,10 +220,7 @@ def main():
     
     if token and chat_id:
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
-        payload = {
-            "chat_id": chat_id, 
-            "caption": f"ICON-2I ({nome_run})"
-        }
+        payload = {"chat_id": chat_id, "caption": f"ICON-2I ({nome_run})"}
         if thread_id: payload["message_thread_id"] = thread_id
         try:
             with open(FILENAME, "rb") as photo:
