@@ -2,8 +2,8 @@ name: Invio Grafico Spaghetti Google WeatherNext 2
 
 on:
   schedule:
-    # Esegue al minuto 35 ogni 3 ore, ben sfalsato per non accavallarsi con il profilo base Google
-    - cron: '35 */3 * * *'
+    # Esegue al minuto 24 ogni 3 ore (ben sfalsato per non accavallarsi)
+    - cron: '24 */3 * * *'
   
   workflow_dispatch:
 
@@ -34,11 +34,11 @@ jobs:
           TELEGRAM_THREAD_ID_GOOGLE: ${{ secrets.TELEGRAM_THREAD_ID_GOOGLE }}
         run: python google_weathernext_spaghetti.py
 
-      - name: Salva il file hash dei dati (Commit & Push)
+      - name: Salva aggiornamento orario (Commit & Push)
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add ultimo_hash_google_wnx_spaghetti.txt || true
-          git commit -m "Aggiornamento hash dati Spaghetti Google WNX2 [skip ci]" || echo "Nessun nuovo run Google Spaghetti"
+          git add ultima_ora_google_wnx_spaghetti.txt || true
+          git commit -m "Aggiornamento orario Google WNX2 Spaghetti [skip ci]" || echo "Nessun nuovo run Google Spaghetti"
           git pull --rebase origin main
           git push
