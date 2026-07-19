@@ -2,9 +2,8 @@ name: Invio Grafico Unificato ICON-CH2
 
 on:
   schedule:
-    # Cron ogni 90 minuti (sfalsato rispetto a ICON-D2 per evitare conflitti git push)
-    - cron: '22 0,3,6,9,12,15,18,21 * * *'
-    - cron: '52 1,4,7,10,13,16,19,22 * * *'
+    # Esegue ogni ora al minuto 42 (8 run ensemble al giorno)
+    - cron: '42 * * * *'
   
   workflow_dispatch:
 
@@ -35,11 +34,11 @@ jobs:
           TELEGRAM_THREAD_ID_HD: ${{ secrets.TELEGRAM_THREAD_ID_HD }}
         run: python icon_ch2_profile.py
 
-      - name: Salva il file hash dei dati (Commit & Push)
+      - name: Salva aggiornamento orario (Commit & Push)
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add ultimo_hash_icon_ch2.txt || true
-          git commit -m "Aggiornamento hash dati unificato ICON-CH2 [skip ci]" || echo "Nessun nuovo run ICON-CH2"
+          git add ultima_ora_icon_ch2.txt || true
+          git commit -m "Aggiornamento orario ICON-CH2 [skip ci]" || echo "Nessun nuovo run ICON-CH2"
           git pull --rebase origin main
           git push
