@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import requests
-import hashlib
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,73 +14,71 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 LATITUDE = 45.07347491421504
 LONGITUDE = 7.543461388723449
 
-FILE_HASH = "ultimo_hash_ecmwf_rh_z.txt"
+FILE_LAST_HOUR = "ultima_ora_ecmwf_rh_z.txt"
 FILENAME = "ecmwf_rh_z_profile.png"
 
-def verifica_dati_nuovi(hourly_data: dict, params_to_check: list) -> tuple[bool, str, int, int]:
+# Regole rigorose ECMWF: Calcoliamo il run sulla base della fine ufficiale a 15 giorni (362h)
+RUN_DURATION = 362
+START_DELAY = 2
+
+def estrai_limiti_run(hourly_data: dict, hourly_params: list, utc_offset_sec: int) -> tuple[bool, str, int, int]:
     times = hourly_data.get("time", [])
     if not times: return False, "", -1, -1
 
-    now_utc = datetime.utcnow()
-    
-    # Determiniamo quale run stiamo elaborando in base all'ora attuale UTC.
-    # Dalle 06:00 UTC alle 15:59 UTC intercettiamo il run della mattina (00Z)
-    if 6 <= now_utc.hour < 16:
-        nome_run = "00Z"
-        run_date = now_utc.date()
-        start_hour_local = 4
-    else:
-        # Altrimenti intercettiamo il run della sera (12Z)
-        nome_run = "12Z"
-        # Se lo script gira dopo la mezzanotte UTC (es. 01:27), il run 12Z appartiene al giorno prima
-        if now_utc.hour < 6:
-            run_date = now_utc.date() - timedelta(days=1)
-        else:
-            run_date = now_utc.date()
-        start_hour_local = 16
+    hourly_end_indices = []
+    for param in hourly_params:
+        vals = hourly_data.get(param, [])
+        if not vals: return False, "", -1, -1
+        
+        end_idx = -1
+        for i in range(len(vals) - 1, -1, -1):
+            if vals[i] is not None:
+                end_idx = i
+                break
+        
+        if end_idx == -1: return False, "", -1, -1
+        hourly_end_indices.append(end_idx)
 
-    # 1. Costruiamo l'istante esatto di partenza del grafico (04:00 o 16:00)
-    start_time_str = f"{run_date.strftime('%Y-%m-%d')}T{start_hour_local:02d}:00"
-    
-    # 2. Costruiamo l'istante esatto di fine (23:00 del 5° giorno successivo)
-    end_date = run_date + timedelta(days=5)
-    end_time_str = f"{end_date.strftime('%Y-%m-%d')}T23:00"
+    # Verifica incrociata che l'intero run a 15 giorni sia caricato
+    if len(set(hourly_end_indices)) != 1:
+        return False, "", -1, -1
+
+    end_idx1 = hourly_end_indices[0]
+
+    ultima_ora_valida_str = times[end_idx1]
+
+    # Ricostruzione matematica a ritroso del Run
+    dt_end_local = datetime.fromisoformat(ultima_ora_valida_str)
+    dt_end_utc = dt_end_local - timedelta(seconds=utc_offset_sec)
+    dt_run_utc = dt_end_utc - timedelta(hours=RUN_DURATION)
+    dt_start_utc = dt_run_utc + timedelta(hours=START_DELAY)
+
+    dt_start_local = dt_start_utc + timedelta(seconds=utc_offset_sec)
+    start_time_str = dt_start_local.strftime("%Y-%m-%dT%H:%M")
+    nome_run = dt_run_utc.strftime("%H") + "Z"
 
     try:
-        s_idx = times.index(start_time_str)
-        e_idx = times.index(end_time_str)
+        start_idx = times.index(start_time_str)
     except ValueError:
         return False, "", -1, -1
 
-    # 3. Barriera di sincronizzazione: Controlliamo l'hash sulle ultime 24 ore della nostra finestra
-    hash_string = ""
-    for param in params_to_check:
-        vals = hourly_data.get(param, [])
-        if not vals or len(vals) <= e_idx: return False, "", -1, -1
-        
-        # Estraiamo solo le ultime 24 ore della finestra (la "coda" del run di 5 giorni)
-        coda = vals[e_idx - 23 : e_idx + 1]
-        
-        # Se ci sono buchi/None nella coda, il run sta ancora caricando
-        if any(v is None for v in coda):
-            return False, "", -1, -1
-            
-        hash_string += str(coda)
+    expected_points = RUN_DURATION - START_DELAY + 1
+    actual_points = end_idx1 - start_idx + 1
 
-    hash_attuale = hashlib.md5(hash_string.encode('utf-8')).hexdigest()
+    if actual_points < expected_points:
+        print(f"⏳ Run {nome_run} in caricamento... ({actual_points}/{expected_points} ore)")
+        return False, "", -1, -1
 
-    # 4. Confronto Hash
-    if os.path.exists(FILE_HASH):
-        with open(FILE_HASH, "r") as f:
-            hash_salvato = f.read().strip()
-        if hash_attuale == hash_salvato:
+    if os.path.exists(FILE_LAST_HOUR):
+        with open(FILE_LAST_HOUR, "r") as f:
+            ultima_ora_salvata = f.read().strip()
+        if ultima_ora_valida_str <= ultima_ora_salvata:
             return False, "", -1, -1
 
-    # Aggiorniamo l'hash e diamo il via libera
-    with open(FILE_HASH, "w") as f:
-        f.write(hash_attuale)
+    with open(FILE_LAST_HOUR, "w") as f:
+        f.write(ultima_ora_valida_str)
 
-    return True, nome_run, s_idx, e_idx
+    return True, nome_run, start_idx, end_idx1
 
 def fetch_dati_con_retry() -> dict:
     URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
@@ -97,8 +94,8 @@ def fetch_dati_con_retry() -> dict:
         "hourly": ",".join(hourly_vars),
         "models": "ecmwf_ifs025_ensemble_mean",
         "timezone": "Europe/Rome",
-        "past_days": 1,   # Necessario per includere i run del giorno precedente post-mezzanotte
-        "forecast_days": 7 # Abbondante per coprire i 5 giorni senza errori di indice
+        "past_days": 1,
+        "forecast_days": 16 # Chiediamo 16 giorni per avere il termine perfetto a 362h
     }
     headers = {"User-Agent": "MeteoBot-ECMWF-RH-Z/5.0"}
 
@@ -113,13 +110,14 @@ def fetch_dati_con_retry() -> dict:
     return {}
 
 def main():
-    print("Scaricamento dati ECMWF (Umidità e Geopotenziale) a 5 Giorni...")
+    print("Scaricamento dati ECMWF (Umidità e Geopotenziale)...")
     data = fetch_dati_con_retry()
     
     if not data: sys.exit(0)
     hourly = data.get("hourly", {})
+    utc_offset = data.get("utc_offset_seconds", 0)
     
-    # Verifica che la colonna sia aggiornata integralmente (dal basso fino a 200hPa)
+    # Sincronizzazione multi-livello per confermare che l'API abbia caricato tutto
     params_to_check = [
         "relative_humidity_925hPa",
         "geopotential_height_925hPa",
@@ -127,13 +125,17 @@ def main():
         "geopotential_height_200hPa"
     ]
     
-    is_new, nome_run, s_idx, e_idx = verifica_dati_nuovi(hourly, params_to_check)
+    is_new, nome_run, s_idx, e_idx_full = estrai_limiti_run(hourly, params_to_check, utc_offset)
     if not is_new: sys.exit(0)
         
-    print(f"ℹ️ Trovati nuovi dati ECMWF {nome_run}. Generazione grafici esatti sui 5 giorni...")
+    print(f"ℹ️ Trovati nuovi dati ECMWF {nome_run}. Generazione grafici tagliati a 5 Giorni...")
     
-    # Taglio chirurgico dell'asse temporale
-    times = pd.to_datetime(hourly.get("time"))[s_idx : e_idx + 1]
+    # =========================================================================
+    # TAGLIO CHIRURGICO: Partiamo dal primo dato valido e prendiamo solo 120 ore (5 giorni)
+    # =========================================================================
+    e_idx_plot = min(s_idx + 120, e_idx_full)
+    
+    times = pd.to_datetime(hourly.get("time"))[s_idx : e_idx_plot + 1]
 
     plot_levels = ["200hPa", "250hPa", "300hPa", "400hPa", "500hPa", "600hPa", "700hPa", "850hPa", "925hPa"]
     
@@ -164,9 +166,9 @@ def main():
         rh_raw = hourly.get(f"relative_humidity_{lvl}")
         z_raw = hourly.get(f"geopotential_height_{lvl}")
         
-        # Taglio chirurgico dei dati usando gli indici perfetti
-        rh_arr = np.array(rh_raw[s_idx : e_idx + 1], dtype=float) if rh_raw else None
-        z_arr = np.array(z_raw[s_idx : e_idx + 1], dtype=float) if z_raw else None
+        # Tagliamo anche i dati a 120 ore esatte
+        rh_arr = np.array(rh_raw[s_idx : e_idx_plot + 1], dtype=float) if rh_raw else None
+        z_arr = np.array(z_raw[s_idx : e_idx_plot + 1], dtype=float) if z_raw else None
         
         if rh_arr is not None:
             ax.plot(times, rh_arr, color="#1f77b4", linewidth=2.5, linestyle='-', label=f"Umidità Rel. (%)")
