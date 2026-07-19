@@ -17,8 +17,9 @@ LONGITUDE = 7.543461388723449
 FILE_LAST_HOUR = "ultima_ora_ecmwf.txt"
 FILENAME = "ecmwf_thermal_geopot_profile.png"
 
-RUN_DURATION = 360
-START_DELAY = 0
+# Regole rigorose ECMWF: Inizia a +2h, Finisce a +362h (15 gg)
+RUN_DURATION = 362
+START_DELAY = 2
 
 def estrai_limiti_run(hourly_data: dict, param1: str, param2: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
     times = hourly_data.get("time", [])
@@ -101,7 +102,7 @@ def fetch_dati_con_retry() -> dict:
         "past_days": 1,
         "forecast_days": 16
     }
-    headers = {"User-Agent": "MeteoBot-EnsemblePlotter/7.0"}
+    headers = {"User-Agent": "MeteoBot-EnsemblePlotter/8.0"}
 
     for tentativo in range(3):
         try:
@@ -195,7 +196,8 @@ def main():
         else:
             ax.legend(loc='upper right', fontsize=9, ncol=2 if config.get("has_dew") else 1)
 
-    titolo_in_basso = "Analisi ECMWF (15 Giorni) - Profilo Termodinamico Verticale   |   Data e Ora (Fuso Orario Locale)"
+    lunghezza_effettiva = len(times) - 1
+    titolo_in_basso = f"Analisi ECMWF ({lunghezza_effettiva}h) - Profilo Termodinamico Verticale   |   Data e Ora (Locale)"
     axs[-1].set_xlabel(titolo_in_basso, fontsize=13, fontweight='bold', labelpad=15)
     axs[-1].xaxis.set_major_locator(mdates.DayLocator())
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
