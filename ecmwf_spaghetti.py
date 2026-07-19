@@ -21,28 +21,50 @@ FILENAME = "ecmwf_spaghetti_profile.png"
 RUN_DURATION = 362
 START_DELAY = 2
 
-def estrai_limiti_run(hourly_data: dict, param1: str, param2: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
+def estrai_limiti_run(hourly_data: dict, hourly_params: list, utc_offset_sec: int, daily_data: dict, daily_params: list) -> tuple[bool, str, int, int, int, int]:
     times = hourly_data.get("time", [])
-    vals1 = hourly_data.get(param1, [])
-    vals2 = hourly_data.get(param2, [])
+    daily_times_list = daily_data.get("time", [])
+    if not times or not daily_times_list: return False, "", -1, -1, -1, -1
 
-    if not times or not vals1 or not vals2: return False, "", -1, -1
+    # Controllo Sincronizzazione Oraria: tutti i parametri devono avere la stessa lunghezza
+    hourly_end_indices = []
+    for param in hourly_params:
+        vals = hourly_data.get(param, [])
+        if not vals: return False, "", -1, -1, -1, -1
+        
+        end_idx = -1
+        for i in range(len(vals) - 1, -1, -1):
+            if vals[i] is not None:
+                end_idx = i
+                break
+        
+        if end_idx == -1: return False, "", -1, -1, -1, -1
+        hourly_end_indices.append(end_idx)
 
-    end_idx1 = -1
-    for i in range(len(vals1) - 1, -1, -1):
-        if vals1[i] is not None:
-            end_idx1 = i
-            break
-            
-    end_idx2 = -1
-    for i in range(len(vals2) - 1, -1, -1):
-        if vals2[i] is not None:
-            end_idx2 = i
-            break
+    if len(set(hourly_end_indices)) != 1:
+        return False, "", -1, -1, -1, -1
+    end_idx1 = hourly_end_indices[0]
 
-    if end_idx1 == -1 or end_idx1 != end_idx2: 
-        return False, "", -1, -1
+    # Controllo Sincronizzazione Giornaliera
+    daily_end_indices = []
+    for param in daily_params:
+        vals = daily_data.get(param, [])
+        if not vals: return False, "", -1, -1, -1, -1
+        
+        d_idx = -1
+        for i in range(len(vals) - 1, -1, -1):
+            if vals[i] is not None:
+                d_idx = i
+                break
+        
+        if d_idx == -1: return False, "", -1, -1, -1, -1
+        daily_end_indices.append(d_idx)
+        
+    if len(set(daily_end_indices)) != 1:
+        return False, "", -1, -1, -1, -1
+    d_end_idx = daily_end_indices[0]
 
+    # Estrazione dell'ora finale di riferimento
     ultima_ora_valida_str = times[end_idx1]
 
     dt_end_local = datetime.fromisoformat(ultima_ora_valida_str)
@@ -52,30 +74,32 @@ def estrai_limiti_run(hourly_data: dict, param1: str, param2: str, utc_offset_se
 
     dt_start_local = dt_start_utc + timedelta(seconds=utc_offset_sec)
     start_time_str = dt_start_local.strftime("%Y-%m-%dT%H:%M")
+    start_day_str = start_time_str[:10] # Isoliamo YYYY-MM-DD per tagliare il daily
     nome_run = dt_run_utc.strftime("%H") + "Z"
 
     try:
         start_idx = times.index(start_time_str)
+        d_start_idx = daily_times_list.index(start_day_str)
     except ValueError:
-        return False, "", -1, -1
+        return False, "", -1, -1, -1, -1
 
     expected_points = RUN_DURATION - START_DELAY + 1
     actual_points = end_idx1 - start_idx + 1
 
     if actual_points < expected_points:
         print(f"⏳ Run {nome_run} in caricamento... ({actual_points}/{expected_points} ore)")
-        return False, "", -1, -1
+        return False, "", -1, -1, -1, -1
 
     if os.path.exists(FILE_LAST_HOUR):
         with open(FILE_LAST_HOUR, "r") as f:
             ultima_ora_salvata = f.read().strip()
         if ultima_ora_valida_str <= ultima_ora_salvata:
-            return False, "", -1, -1
+            return False, "", -1, -1, -1, -1
 
     with open(FILE_LAST_HOUR, "w") as f:
         f.write(ultima_ora_valida_str)
 
-    return True, nome_run, start_idx, end_idx1
+    return True, nome_run, start_idx, end_idx1, d_start_idx, d_end_idx
 
 def fetch_dati_con_retry() -> dict:
     URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
@@ -95,7 +119,7 @@ def fetch_dati_con_retry() -> dict:
         "past_days": 1,
         "forecast_days": 16
     }
-    headers = {"User-Agent": "MeteoBot-Spaghetti/6.0"}
+    headers = {"User-Agent": "MeteoBot-Spaghetti/7.0"}
 
     for tentativo in range(3):
         try:
@@ -116,18 +140,26 @@ def main():
     daily = data.get("daily", {})
     utc_offset = data.get("utc_offset_seconds", 0)
 
-    member_keys = sorted([k for k in hourly.keys() if k.startswith("temperature_850hPa_member")])
-    if not member_keys:
-        print("⚠️ Errore: Nessun membro Ensemble trovato.")
-        sys.exit(0)
+    member_keys_850 = sorted([k for k in hourly.keys() if k.startswith("temperature_850hPa_member")])
+    member_keys_500 = sorted([k for k in hourly.keys() if k.startswith("temperature_500hPa_member")])
+    precip_keys = sorted([k for k in daily.keys() if k.startswith("precipitation_sum_member")])
     
-    is_new, nome_run, s_idx, e_idx = estrai_limiti_run(hourly, member_keys[0], member_keys[-1], utc_offset)
+    if not member_keys_850 or not member_keys_500 or not precip_keys:
+        print("⚠️ Errore: Membri Ensemble mancanti.")
+        sys.exit(0)
+        
+    # Barriera multi-livello
+    hourly_params_to_check = [member_keys_850[0], member_keys_850[-1], member_keys_500[-1]]
+    daily_params_to_check = [precip_keys[0], precip_keys[-1]]
+    
+    is_new, nome_run, s_idx, e_idx, d_s_idx, d_e_idx = estrai_limiti_run(hourly, hourly_params_to_check, utc_offset, daily, daily_params_to_check)
     if not is_new: sys.exit(0)
         
-    print(f"ℹ️ Trovato nuovo run ECMWF Spaghetti {nome_run}. Generazione grafico...")
+    print(f"ℹ️ Trovato nuovo run ECMWF Spaghetti {nome_run}. Generazione grafico (No past days)...")
     
+    # Taglio chirurgico per ignorare i past_days
     hourly_times = pd.to_datetime(hourly.get("time"))[s_idx : e_idx + 1]
-    daily_times = pd.to_datetime(daily.get("time")) + pd.Timedelta(hours=12)
+    daily_times = pd.to_datetime(daily.get("time"))[d_s_idx : d_e_idx + 1] + pd.Timedelta(hours=12)
 
     def extract_hourly_members(var_name):
         keys = [k for k in hourly.keys() if k.startswith(f"{var_name}_member")]
@@ -140,7 +172,7 @@ def main():
         keys = [k for k in daily.keys() if k.startswith(f"{var_name}_member")]
         if not keys: return None
         keys.sort()
-        members_data = [daily[k] for k in keys]
+        members_data = [daily[k][d_s_idx : d_e_idx + 1] for k in keys]
         return np.array(members_data, dtype=float)
 
     t850_members = extract_hourly_members("temperature_850hPa")
