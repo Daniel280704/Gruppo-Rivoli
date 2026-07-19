@@ -1,6 +1,1 @@
 
-season_2026_winter
-month_2026_03
-month_2026_04
-month_2026_05
-season_2026_spring
