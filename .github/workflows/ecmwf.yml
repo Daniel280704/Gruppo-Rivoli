@@ -2,10 +2,8 @@ name: Invio Grafico Profilo ECMWF
 
 on:
   schedule:
-    # Gira ai minuti 27 di:
-    # 09, 10, 11 UTC -> 11:27, 12:27, 13:27 Italiane (Mattino)
-    # 21, 22, 23 UTC -> 23:27, 24:27, 01:27 Italiane (Sera/Notte)
-    - cron: '27 9,10,11,21,22,23 * * *'
+    # Gira ogni 3 ore per intercettare i run 0Z e 12Z 
+    - cron: '13 */3 * * *'
   
   workflow_dispatch:
 
@@ -13,7 +11,7 @@ jobs:
   genera_e_invia_grafico:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # FONDAMENTALE: Consente di committare il file hash .txt
+      contents: write 
 
     steps:
       - name: Checkout del codice
@@ -36,11 +34,11 @@ jobs:
           TELEGRAM_THREAD_ID_ECMWF: ${{ secrets.TELEGRAM_THREAD_ID_ECMWF }}
         run: python ecmwf.py
 
-      - name: Salva il file hash dei dati ECMWF (Commit & Push)
+      - name: Salva aggiornamento orario (Commit & Push)
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add ultimo_hash_ecmwf.txt || true
-          git commit -m "Aggiornamento hash dati ECMWF [skip ci]" || echo "Nessun nuovo run ECMWF, hash invariato"
+          git add ultima_ora_ecmwf.txt || true
+          git commit -m "Aggiornamento orario ECMWF [skip ci]" || echo "Nessun nuovo run ECMWF"
           git pull --rebase origin main
           git push
