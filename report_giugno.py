@@ -4,6 +4,44 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
+# --- FUNZIONE HELPER PER LA CLASSIFICA DETTAGLIATA ---
+def genera_dettaglio_classifica(df, year_target, metric, diff, unit):
+    # Se la differenza è > 0 siamo in surplus (ordine decrescente: più caldo/piovoso in cima)
+    # Se è < 0 siamo in deficit (ordine crescente: più freddo/secco in cima)
+    is_surplus = diff > 0
+    ascending_order = not is_surplus
+    
+    # Ordiniamo il dataframe storico in base alla metrica e resettiamo l'indice
+    df_sorted = df.sort_values(by=metric, ascending=ascending_order).reset_index(drop=True)
+    
+    # Troviamo a quale riga (indice) è finito il nostro anno target (2026)
+    idx = df_sorted[df_sorted['year'] == year_target].index[0]
+    pos = idx + 1 # La posizione in classifica è l'indice + 1
+    
+    # Determiniamo le parole chiave
+    if metric == 'tmax' or metric == 'tmin':
+        tipo = "più caldo" if is_surplus else "più freddo"
+    else:
+        tipo = "più piovoso" if is_surplus else "più secco"
+        
+    base_text = f"**{pos}°** {tipo}"
+    
+    details = []
+    # Se l'indice è > 0, significa che c'è qualcuno sopra di noi in classifica
+    if idx > 0:
+        val_above = df_sorted.iloc[idx - 1]
+        details.append(f"dietro al {int(val_above['year'])} ({val_above[metric]:.1f}{unit})")
+        
+    # Se l'indice è minore dell'ultima riga, c'è qualcuno sotto di noi in classifica
+    if idx < len(df_sorted) - 1:
+        val_below = df_sorted.iloc[idx + 1]
+        details.append(f"davanti al {int(val_below['year'])} ({val_below[metric]:.1f}{unit})")
+        
+    # Assembliamo la stringa finale
+    if details:
+        return f"{base_text} [_{', '.join(details)}_]"
+    return base_text
+
 def main():
     print("Recupero dati di Giugno 2026 e medie storiche...")
 
@@ -40,7 +78,7 @@ def main():
     diff_tmin = tmin_eff - tmin_ref
     diff_precip = precip_eff - precip_ref
 
-    # --- 3. CLASSIFICA STORICA (DAL 1940) ---
+    # --- 3. CLASSIFICA STORICA DETTAGLIATA (DAL 1940) ---
     testo_classifica = ""
     try:
         print("Elaborazione classifica storica dal 1940...")
@@ -50,7 +88,7 @@ def main():
         df_storico_lungo['year'] = df_storico_lungo['date'].dt.year
         df_storico_lungo['month'] = df_storico_lungo['date'].dt.month
         
-        # Filtriamo tutti i mesi di Giugno storici (1940-2025)
+        # Filtriamo tutti i mesi di Giugno (1940-2025) e calcoliamo le medie/somme
         df_giugno = df_storico_lungo[df_storico_lungo['month'] == 6]
         giugno_storico = df_giugno.groupby('year').agg({
             'tmax': 'mean', 
@@ -58,34 +96,16 @@ def main():
             'precip': 'sum'
         }).reset_index()
         
-        # Aggiungiamo i dati del 2026 appena scaricati per calcolare la graduatoria totale
+        # Inseriamo il 2026 nel dataframe totale per confrontarlo con tutti gli altri anni
         nuova_riga = pd.DataFrame({'year': [2026], 'tmax': [tmax_eff], 'tmin': [tmin_eff], 'precip': [precip_eff]})
         giugno_totale = pd.concat([giugno_storico, nuova_riga], ignore_index=True)
         tot_anni = len(giugno_totale)
         
-        # Logica dei piazzamenti dinamici basata su surplus o deficit
-        if diff_tmax > 0:
-            pos_tmax = int(giugno_totale['tmax'].rank(ascending=False, method='min').iloc[-1])
-            testo_tmax = f"{pos_tmax}° più caldo"
-        else:
-            pos_tmax = int(giugno_totale['tmax'].rank(ascending=True, method='min').iloc[-1])
-            testo_tmax = f"{pos_tmax}° più freddo"
+        # Generiamo i testi dettagliati usando la funzione Helper
+        testo_tmax = genera_dettaglio_classifica(giugno_totale, 2026, 'tmax', diff_tmax, "°C")
+        testo_tmin = genera_dettaglio_classifica(giugno_totale, 2026, 'tmin', diff_tmin, "°C")
+        testo_precip = genera_dettaglio_classifica(giugno_totale, 2026, 'precip', diff_precip, "mm")
             
-        if diff_tmin > 0:
-            pos_tmin = int(giugno_totale['tmin'].rank(ascending=False, method='min').iloc[-1])
-            testo_tmin = f"{pos_tmin}° più caldo"
-        else:
-            pos_tmin = int(giugno_totale['tmin'].rank(ascending=True, method='min').iloc[-1])
-            testo_tmin = f"{pos_tmin}° più freddo"
-            
-        if diff_precip > 0:
-            pos_precip = int(giugno_totale['precip'].rank(ascending=False, method='min').iloc[-1])
-            testo_precip = f"{pos_precip}° più piovoso"
-        else:
-            pos_precip = int(giugno_totale['precip'].rank(ascending=True, method='min').iloc[-1])
-            testo_precip = f"{pos_precip}° più secco"
-            
-        # Stringa pronta per la caption di Telegram
         testo_classifica = (f"\n\n🏆 **Classifica Storica (su {tot_anni} anni dal 1940)**\n"
                             f"🌡 T. Massima: {testo_tmax}\n"
                             f"❄️ T. Minima: {testo_tmin}\n"
@@ -157,7 +177,6 @@ def main():
     if token and chat_id:
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
         
-        # Inseriamo la classifica appena calcolata direttamente nella Caption del messaggio
         caption = f"📊 **Report Climatico: Giugno 2026**\nAnalisi delle anomalie termiche e pluviometriche rispetto alla media storica (1991-2020) di Rivoli.{testo_classifica}"
         
         payload = {
