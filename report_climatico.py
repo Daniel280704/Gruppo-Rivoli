@@ -308,10 +308,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
 def main():
     print("Avvio elaborazione forzata batch climatico con pause per evitare limiti API e bot Telegram...")
     
-    
 
-    process_period('month', 2026, target_month=5)
-    print("In attesa 30 secondi..."); time.sleep(30)
     
     process_period('month', 2026, target_month=6)
     print("Lancio batch completato!")
