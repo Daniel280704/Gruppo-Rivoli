@@ -69,7 +69,7 @@ jobs:
           TARGET_MONTH: ${{ github.event.inputs.target_month }}
           TARGET_SEASON: ${{ github.event.inputs.target_season }}
           TARGET_YEAR: ${{ github.event.inputs.target_year }}
-        run: python report_climatico.py 
+        run: python climatologia.py 
 
       - name: Salva il lock inviati (Commit & Push)
         run: |
