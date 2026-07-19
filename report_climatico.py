@@ -10,28 +10,18 @@ from datetime import datetime, timedelta
 LOCK_FILE = "lock_report_inviati.txt"
 
 # --- FUNZIONI GRAFICHE E DI TESTO ---
-def genera_dettaglio_classifica(df, year_target, metric, diff, unit, metric_type="default"):
-    if metric_type == "streak":
-        ascending_order = False
-        tipo = "serie più lunga"
-    else:
-        is_surplus = diff > 0
-        ascending_order = not is_surplus
-        tipo = "più caldo" if metric in ['tmax', 'tmin'] else "più piovoso"
-        if not is_surplus:
-            tipo = "più freddo" if metric in ['tmax', 'tmin'] else "più secco"
+def genera_dettaglio_classifica(df, year_target, metric, diff, unit):
+    is_surplus = diff > 0
+    ascending_order = not is_surplus
+    tipo = "più caldo" if metric in ['tmax', 'tmin'] else "più piovoso"
+    if not is_surplus:
+        tipo = "più freddo" if metric in ['tmax', 'tmin'] else "più secco"
 
     df_sorted = df.sort_values(by=metric, ascending=ascending_order).reset_index(drop=True)
     idx = df_sorted[df_sorted['year'] == year_target].index[0]
     pos = idx + 1
     
-    curr_val = df_sorted.loc[idx, metric]
-    
-    if metric_type == "streak":
-        diff_str = f" ({diff:+.1f} vs media) -> "
-        base_text = f"{int(curr_val)} giorni consecutivi{diff_str}**{pos}°** {tipo}"
-    else:
-        base_text = f"**{pos}°** {tipo}"
+    base_text = f"**{pos}°** {tipo}"
 
     if pos > 5: return base_text
     if pos == 1: return f"{base_text} [🏆 Record dal 1940!]"
@@ -47,6 +37,39 @@ def genera_dettaglio_classifica(df, year_target, metric, diff, unit, metric_type
         dettagli_str = ", ".join(details)
         
     return f"{base_text} [dietro al {dettagli_str}]"
+
+# --- FUNZIONE ESTREMI AGGIORNATA (INDIPENDENTE DALLA STAGIONE) ---
+def format_extreme(name, count, streak, df_storico, year_target, metric_name):
+    # Se le ricorrenze sono zero, non stampiamo nulla
+    if count == 0:
+        return ""
+    
+    df_sorted = df_storico.sort_values(by=metric_name, ascending=False).reset_index(drop=True)
+    idx = df_sorted[df_sorted['year'] == year_target].index[0]
+    pos = idx + 1
+    
+    base_streak = f"max {int(streak)} consecutivi"
+    
+    # Logica di visualizzazione Top 10 e Top 5
+    if pos <= 10:
+        if pos == 1:
+            streak_text = f"({base_streak}, 🏆 Record dal 1940!)"
+        elif pos <= 5:
+            rows_above = df_sorted.iloc[:idx]
+            details = [f"{int(row['year'])} ({int(row[metric_name])})" for _, row in rows_above.iterrows()]
+            if len(details) > 10:
+                details_str = ", ".join(details[:10]) + f", ...e altri {len(details)-10}"
+            else:
+                details_str = ", ".join(details)
+            streak_text = f"({base_streak}, **{pos}°** serie più lunga [_dietro al {details_str}_])"
+        else:
+            # Posizione tra 6 e 10 (solo rank, no lista anni)
+            streak_text = f"({base_streak}, **{pos}°** serie più lunga)"
+    else:
+        # Fuori dalla top 10 (solo numero consecutivi)
+        streak_text = f"({base_streak})"
+        
+    return f"{name}: {int(count)} {streak_text}\n"
 
 def generate_dashboard(tmax, tmin, precip, diff_tmax, diff_tmin, diff_precip, title, filename):
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -86,8 +109,6 @@ def get_max_streak(s):
 
 # --- MOTORE DI CALCOLO ---
 def process_period(period_type, target_year, target_month=None, target_season=None):
-    is_summer, is_winter = False, False
-    
     if period_type == 'month':
         mesi = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
         nome_periodo = f"{mesi[target_month-1]} {target_year}"
@@ -97,24 +118,26 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         months_to_filter = [target_month]
         lock_id = f"month_{target_year}_{target_month:02d}"
         
-        if target_month in [5, 6, 7, 8, 9]: is_summer = True
-        if target_month in [11, 12, 1, 2, 3]: is_winter = True
-        
     elif period_type == 'season':
         stagioni = {'winter': 'Inverno', 'spring': 'Primavera', 'summer': 'Estate', 'autumn': 'Autunno'}
-        nome_periodo = f"{stagioni[target_season]} {target_year}"
+        
+        # Per l'inverno, storicamente si indica "Inverno 2025/2026", quindi aggiustiamo il nome
+        if target_season == 'winter':
+            nome_periodo = f"Inverno {target_year-1}/{target_year}"
+        else:
+            nome_periodo = f"{stagioni[target_season]} {target_year}"
+            
         lock_id = f"season_{target_year}_{target_season}"
+        
         if target_season == 'winter':
             start_date, end_date = f"{target_year-1}-12-01", f"{target_year}-02-{calendar.monthrange(target_year, 2)[1]:02d}"
             months_to_filter = [12, 1, 2]
-            is_winter = True
         elif target_season == 'spring':
             start_date, end_date = f"{target_year}-03-01", f"{target_year}-05-31"
             months_to_filter = [3, 4, 5]
         elif target_season == 'summer':
             start_date, end_date = f"{target_year}-06-01", f"{target_year}-08-31"
             months_to_filter = [6, 7, 8]
-            is_summer = True
         elif target_season == 'autumn':
             start_date, end_date = f"{target_year}-09-01", f"{target_year}-11-30"
             months_to_filter = [9, 10, 11]
@@ -124,13 +147,12 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         start_date, end_date = f"{target_year}-01-01", f"{target_year}-12-31"
         months_to_filter = list(range(1, 13))
         lock_id = f"year_{target_year}"
-        is_summer, is_winter = True, True
 
     if os.path.exists(LOCK_FILE):
         with open(LOCK_FILE, "r") as f:
             inviati = f.read().splitlines()
         if lock_id in inviati:
-            print(f"⏭️ Il report {nome_periodo} ({lock_id}) è già stato inviato. Salto per evitare duplicati.")
+            print(f"⏭️ Il report {nome_periodo} ({lock_id}) è già stato inviato. Salto.")
             return
 
     print(f"\n🚀 Elaborazione {nome_periodo} in corso...")
@@ -155,7 +177,8 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         df_storico['year'] = df_storico['date'].dt.year
         df_storico['month'] = df_storico['date'].dt.month
 
-        df_storico = df_storico[df_storico['year'] != target_year]
+        # Rimuoviamo l'anno corrente (o l'anno dell'inverno) per poi incollare i dati freschi API
+        df_storico = df_storico[~((df_storico['year'] == target_year) | (df_storico['year'] == target_year-1))]
         full_df = pd.concat([df_storico, api_df[['date', 'year', 'month', 'tmax', 'tmin', 'precip']]], ignore_index=True)
 
         df_filt = full_df[full_df['month'].isin(months_to_filter)].copy()
@@ -205,25 +228,18 @@ def process_period(period_type, target_year, target_month=None, target_season=No
                             f"❄️ T. Minima: {testo_tmin}\n"
                             f"🌧 Precipitazioni: {testo_precip}")
                             
-        if is_summer:
-            r_trop = genera_dettaglio_classifica(totale_anni, target_year, 'trop_s', curr['trop_s'] - baseline['trop_s'], "giorni", metric_type="streak")
-            r_hot = genera_dettaglio_classifica(totale_anni, target_year, 'hot_s', curr['hot_s'] - baseline['hot_s'], "giorni", metric_type="streak")
-            
-            testo_classifica += f"\n\n🏖 **Estremi Estivi**\n"
-            testo_classifica += f"🥵 Notti Tropicali (>= 20°C): {int(curr['trop_n'])} ({curr['trop_n'] - baseline['trop_n']:+.1f} vs media)\n"
-            testo_classifica += f"🔥 {r_trop}\n"
-            testo_classifica += f"☀️ Giorni Roventi (>= 30°C): {int(curr['hot_d'])} ({curr['hot_d'] - baseline['hot_d']:+.1f} vs media)\n"
-            testo_classifica += f"📈 {r_hot}"
+        # --- APPLICAZIONE LOGICA ESTREMI PULITA ED UNIVERSALE ---
+        txt_trop = format_extreme("🥵 Notti Tropicali (Tmin >= 20°C)", curr['trop_n'], curr['trop_s'], totale_anni, target_year, 'trop_s')
+        txt_hot = format_extreme("☀️ Giorni Roventi (Tmax >= 30°C)", curr['hot_d'], curr['hot_s'], totale_anni, target_year, 'hot_s')
+        
+        if txt_trop or txt_hot:
+            testo_classifica += f"\n\n🏖 **Estremi di Caldo**\n{txt_trop}{txt_hot}"
 
-        if is_winter:
-            r_frost = genera_dettaglio_classifica(totale_anni, target_year, 'frost_s', curr['frost_s'] - baseline['frost_s'], "giorni", metric_type="streak")
-            r_ice = genera_dettaglio_classifica(totale_anni, target_year, 'ice_s', curr['ice_s'] - baseline['ice_s'], "giorni", metric_type="streak")
-            
-            testo_classifica += f"\n\n❄️ **Estremi Invernali**\n"
-            testo_classifica += f"🥶 Giorni di Gelo (Tmin < 0°C): {int(curr['frost_d'])} ({curr['frost_d'] - baseline['frost_d']:+.1f} vs media)\n"
-            testo_classifica += f"🧊 {r_frost}\n"
-            testo_classifica += f"⛄ Giorni di Ghiaccio (Tmax <= 0°C): {int(curr['ice_d'])} ({curr['ice_d'] - baseline['ice_d']:+.1f} vs media)\n"
-            testo_classifica += f"📉 {r_ice}"
+        txt_frost = format_extreme("🥶 Giorni di Gelo (Tmin < 0°C)", curr['frost_d'], curr['frost_s'], totale_anni, target_year, 'frost_s')
+        txt_ice = format_extreme("🧊 Giorni di Ghiaccio (Tmax <= 0°C)", curr['ice_d'], curr['ice_s'], totale_anni, target_year, 'ice_s')
+        
+        if txt_frost or txt_ice:
+            testo_classifica += f"\n\n❄️ **Estremi di Freddo**\n{txt_frost}{txt_ice}"
 
     except Exception as e:
         print(f"⚠️ Errore con storico: {e}")
@@ -256,13 +272,26 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
 
-# --- ESECUZIONE FORZATA PER MARZO, APRILE, MAGGIO E PRIMAVERA 2026 ---
+# --- ESECUZIONE BATCH RICHIESTA ---
 def main():
-    print("Avvio elaborazione forzata per Marzo, Aprile, Maggio e Primavera 2026...")
+    print("Avvio elaborazione forzata batch climatico...")
+    
+    # 1. Dicembre 2025
+    process_period('month', 2025, target_month=12)
+    # 2. Gennaio 2026
+    process_period('month', 2026, target_month=1)
+    # 3. Febbraio 2026
+    process_period('month', 2026, target_month=2)
+    # 4. Inverno Meteorologico 2025/2026
+    process_period('season', 2026, target_season='winter')
+    # 5. Marzo 2026
     process_period('month', 2026, target_month=3)
+    # 6. Aprile 2026
     process_period('month', 2026, target_month=4)
+    # 7. Maggio 2026
     process_period('month', 2026, target_month=5)
-    process_period('season', 2026, target_season='spring')
+    # 8. Giugno 2026
+    process_period('month', 2026, target_month=6)
 
 if __name__ == "__main__":
     main()
