@@ -1,77 +1,83 @@
 import os
 import sys
-import hashlib
+import time
 import requests
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from datetime import datetime
+from datetime import datetime, timedelta
+import warnings
 
-# Coordinate esatte - Rivoli
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+
 LATITUDE = 45.07347491421504
 LONGITUDE = 7.543461388723449
 
-FILE_HASH = "ultimo_hash_ecmwf_aifs.txt"
+FILE_LAST_HOUR = "ultima_ora_ecmwf_aifs.txt"
 FILENAME = "ecmwf_aifs_profile.png"
 
-def verifica_dati_nuovi(hourly_data: dict) -> bool:
-    """Verifica se SIA la media SIA lo spread sono stati aggiornati fino all'ultimo giorno."""
-    
-    temp_mean = hourly_data.get("temperature_2m", [])
-    temp_spread = hourly_data.get("temperature_2m_spread", [])
-    
-    # Sicurezza: controlliamo che ci siano dati sufficienti prima di "tagliare" l'array
-    if not temp_mean or not temp_spread or len(temp_mean) < 24:
-        return False
-        
-    # IL TRUCCO: Estraiamo solo le ultime 24 ore del periodo di previsione
-    ultime_24h_mean = temp_mean[-24:]
-    ultime_24h_spread = temp_spread[-24:]
-    
-    # Calcoliamo i due hash solo sulla "coda" del run
-    hash_mean_attuale = hashlib.md5(str(ultime_24h_mean).encode('utf-8')).hexdigest()
-    hash_spread_attuale = hashlib.md5(str(ultime_24h_spread).encode('utf-8')).hexdigest()
-    
-    # Se il file non esiste (prima esecuzione assoluta)
-    if not os.path.exists(FILE_HASH):
-        with open(FILE_HASH, "w") as f:
-            f.write(f"{hash_mean_attuale}\n{hash_spread_attuale}")
-        return True
-        
-    # Leggiamo i vecchi hash dal file
-    with open(FILE_HASH, "r") as f:
-        lines = f.read().splitlines()
-        
-    # Setup del file se ha la lunghezza corretta
-    if len(lines) == 2:
-        hash_mean_salvato = lines[0]
-        hash_spread_salvato = lines[1]
-    else:
-        with open(FILE_HASH, "w") as f:
-            f.write(f"{hash_mean_attuale}\n{hash_spread_attuale}")
-        return True
+RUN_DURATION = 360
+START_DELAY = 0
 
-    # Valutiamo le differenze sull'ultimo giorno noto
-    mean_cambiata = (hash_mean_attuale != hash_mean_salvato)
-    spread_cambiato = (hash_spread_attuale != hash_spread_salvato)
-    
-    # CONDIZIONE RIGOROSA: La coda del run di entrambi i parametri deve essere nuova
-    if mean_cambiata and spread_cambiato:
-        with open(FILE_HASH, "w") as f:
-            f.write(f"{hash_mean_attuale}\n{hash_spread_attuale}")
-        return True
-    else:
-        # Se solo uno è pronto o i dati stanno ancora fluendo
-        if mean_cambiata or spread_cambiato:
-            print("⏳ Rilevato aggiornamento API AIFS in corso. Attendo che il run raggiunga l'ultimo giorno...")
-        return False
+def estrai_limiti_run(hourly_data: dict, param1: str, param2: str, utc_offset_sec: int) -> tuple[bool, str, int, int]:
+    times = hourly_data.get("time", [])
+    vals1 = hourly_data.get(param1, [])
+    vals2 = hourly_data.get(param2, [])
 
-def main():
-    print("Scaricamento dati ECMWF AIFS a 14 giorni in corso...")
-    
+    if not times or not vals1 or not vals2: return False, "", -1, -1
+
+    end_idx1 = -1
+    for i in range(len(vals1) - 1, -1, -1):
+        if vals1[i] is not None:
+            end_idx1 = i
+            break
+            
+    end_idx2 = -1
+    for i in range(len(vals2) - 1, -1, -1):
+        if vals2[i] is not None:
+            end_idx2 = i
+            break
+
+    if end_idx1 == -1 or end_idx1 != end_idx2: 
+        return False, "", -1, -1
+
+    ultima_ora_valida_str = times[end_idx1]
+
+    dt_end_local = datetime.fromisoformat(ultima_ora_valida_str)
+    dt_end_utc = dt_end_local - timedelta(seconds=utc_offset_sec)
+    dt_run_utc = dt_end_utc - timedelta(hours=RUN_DURATION)
+    dt_start_utc = dt_run_utc + timedelta(hours=START_DELAY)
+
+    dt_start_local = dt_start_utc + timedelta(seconds=utc_offset_sec)
+    start_time_str = dt_start_local.strftime("%Y-%m-%dT%H:%M")
+    nome_run = dt_run_utc.strftime("%H") + "Z"
+
+    try:
+        start_idx = times.index(start_time_str)
+    except ValueError:
+        return False, "", -1, -1
+
+    expected_points = RUN_DURATION - START_DELAY + 1
+    actual_points = end_idx1 - start_idx + 1
+
+    if actual_points < expected_points:
+        print(f"⏳ Run {nome_run} in caricamento... ({actual_points}/{expected_points} ore)")
+        return False, "", -1, -1
+
+    if os.path.exists(FILE_LAST_HOUR):
+        with open(FILE_LAST_HOUR, "r") as f:
+            ultima_ora_salvata = f.read().strip()
+        if ultima_ora_valida_str <= ultima_ora_salvata:
+            return False, "", -1, -1
+
+    with open(FILE_LAST_HOUR, "w") as f:
+        f.write(ultima_ora_valida_str)
+
+    return True, nome_run, start_idx, end_idx1
+
+def fetch_dati_con_retry() -> dict:
     URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
-    
     var_list = [
         "temperature_2m", "temperature_2m_spread", "dew_point_2m",
         "temperature_925hPa", "temperature_925hPa_spread",
@@ -85,40 +91,48 @@ def main():
         "geopotential_height_600hPa", "geopotential_height_600hPa_spread",
         "geopotential_height_500hPa", "geopotential_height_500hPa_spread"
     ]
-
     params = {
         "latitude": LATITUDE,
         "longitude": LONGITUDE,
         "hourly": ",".join(var_list),
         "models": "ecmwf_aifs025_ensemble_mean",
         "timezone": "Europe/Rome",
-        "forecast_days": 14
+        "past_days": 1,
+        "forecast_days": 16
     }
-    headers = {"User-Agent": "MeteoBot-AIFS/1.0"}
+    headers = {"User-Agent": "MeteoBot-AIFS/2.0"}
 
-    try:
-        response = requests.get(URL, params=params, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        hourly = data.get("hourly", {})
-    except Exception as e:
-        print(f"❌ Errore API: {e}", file=sys.stderr)
-        sys.exit(1)
+    for tentativo in range(3):
+        try:
+            response = requests.get(URL, params=params, headers=headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"⚠️ Errore API: {e}", file=sys.stderr)
+            time.sleep(15)
+    return {}
 
-    if not verifica_dati_nuovi(hourly):
-        print("ℹ️ Nessun aggiornamento completo trovato per AIFS. Elaborazione fermata.")
-        sys.exit(0)
+def main():
+    print("Scaricamento dati ECMWF AIFS...")
+    data = fetch_dati_con_retry()
+    
+    if not data: sys.exit(0)
+    hourly = data.get("hourly", {})
+    utc_offset = data.get("utc_offset_seconds", 0)
+    
+    is_new, nome_run, s_idx, e_idx = estrai_limiti_run(hourly, "temperature_2m", "temperature_2m_spread", utc_offset)
+    if not is_new: sys.exit(0)
         
-    print("ℹ️ Trovati nuovi dati per AIFS. Generazione del grafico in corso...")
-    times = pd.to_datetime(hourly.get("time"))
+    print(f"ℹ️ Trovato nuovo run AIFS {nome_run}. Generazione del grafico esatto...")
+    times = pd.to_datetime(hourly.get("time"))[s_idx : e_idx + 1]
 
     def get_stats(var_name):
         mean_data = hourly.get(var_name)
         if not mean_data: return None, None, None
-        mean_arr = np.array([np.nan if v is None else v for v in mean_data], dtype=float)
+        mean_arr = np.array([np.nan if v is None else v for v in mean_data[s_idx : e_idx + 1]], dtype=float)
         if f"{var_name}_spread" in hourly:
             spread_data = hourly.get(f"{var_name}_spread")
-            spread_arr = np.array([np.nan if v is None else v for v in spread_data], dtype=float)
+            spread_arr = np.array([np.nan if v is None else v for v in spread_data[s_idx : e_idx + 1]], dtype=float)
             return mean_arr, mean_arr - spread_arr, mean_arr + spread_arr
         return mean_arr, mean_arr, mean_arr
 
@@ -178,7 +192,7 @@ def main():
         else:
             ax.legend(loc='upper right', fontsize=9, ncol=2 if config.get("has_dew") else 1)
 
-    axs[-1].set_xlabel("Analisi ECMWF AIFS (14 Giorni)   |   Data e Ora (Fuso Orario Locale)", fontsize=13, fontweight='bold', labelpad=15)
+    axs[-1].set_xlabel("Analisi ECMWF AIFS (15 Giorni)   |   Data e Ora (Fuso Orario Locale)", fontsize=13, fontweight='bold', labelpad=15)
     axs[-1].xaxis.set_major_locator(mdates.DayLocator())
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
     axs[-1].xaxis.set_minor_locator(mdates.HourLocator(byhour=[12]))
@@ -187,37 +201,19 @@ def main():
     plt.tight_layout()
     plt.savefig(FILENAME, dpi=200, bbox_inches='tight')
 
-    # --- INVIO A TELEGRAM ---
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    thread_id = os.getenv("TELEGRAM_THREAD_ID_ECMWF") # ID della stanza specifica
+    thread_id = os.getenv("TELEGRAM_THREAD_ID_ECMWF")
     
     if token and chat_id:
         url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
-        
-        payload = {
-            "chat_id": chat_id,
-            "caption": "ECMWF AIFS (mean + spread)"
-        }
-        
-        # Se c'è l'ID della stanza, lo aggiunge
-        if thread_id:
-            payload["message_thread_id"] = thread_id
-            
+        payload = {"chat_id": chat_id, "caption": f"ECMWF AIFS (mean + spread) ({nome_run})"}
+        if thread_id: payload["message_thread_id"] = thread_id
         try:
             with open(FILENAME, "rb") as photo:
-                res = requests.post(
-                    url_telegram,
-                    data=payload,
-                    files={"photo": photo}
-                )
-                
-                if res.status_code == 200:
-                    print("✅ Grafico AIFS inviato con successo su Telegram!")
-                else:
-                    print(f"⚠️ Errore API Telegram ({res.status_code}): {res.text}")
-        except Exception as e:
-            print(f"❌ Eccezione durante l'invio a Telegram: {e}")
+                requests.post(url_telegram, data=payload, files={"photo": photo})
+        except Exception:
+            pass 
 
 if __name__ == "__main__":
     main()
