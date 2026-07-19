@@ -5,52 +5,65 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def main():
-    print("Elaborazione dati climatologici 1991-2020...")
+    print("Elaborazione dati climatologici mensili 1991-2020...")
     
-    # 1. Caricamento dei dati
+    # --- 1. CARICAMENTO E PREPARAZIONE DATI ---
     file_path = "open-meteo-45.10N7.50E326m.csv"
     try:
         df = pd.read_csv(file_path, skiprows=3)
     except FileNotFoundError:
-        print(f"❌ Errore: File {file_path} non trovato nel repository.")
+        print(f"❌ Errore: File {file_path} non trovato.")
         return
 
-    # Rinomina le colonne
     df.columns = ['date', 'tmax', 'tmin', 'precip']
 
-    # 2. Elaborazione delle date e calcolo delle medie storiche
     df['date'] = pd.to_datetime(df['date'])
     df['year'] = df['date'].dt.year
     df['month'] = df['date'].dt.month
 
-    # Aggrega per anno e mese (somma piogge, media temperature)
+    # Somma precipitazioni mensili per ogni anno, media temperature
     monthly_yearly = df.groupby(['year', 'month']).agg({
         'tmax': 'mean',
         'tmin': 'mean',
         'precip': 'sum'
     }).reset_index()
 
-    # Media dei 30 anni per la normale climatologica
+    # Media trentennale (la normale climatologica)
     climatology = monthly_yearly.groupby('month').agg({
         'tmax': 'mean',
         'tmin': 'mean',
         'precip': 'mean'
     }).reset_index()
 
-    # 3. Generazione del Grafico (Climatogramma)
+    # --- 2. SALVATAGGIO DEL FILE CSV MENSILI ---
+    climatology_csv = climatology.copy()
+    climatology_csv.columns = ['mese', 'tmax_media', 'tmin_media', 'precip_media']
+    climatology_csv['tmax_media'] = climatology_csv['tmax_media'].round(1)
+    climatology_csv['tmin_media'] = climatology_csv['tmin_media'].round(1)
+    climatology_csv['precip_media'] = climatology_csv['precip_media'].round(1)
+    
+    csv_filename = "riferimento_mensile_1991_2020.csv"
+    climatology_csv.to_csv(csv_filename, index=False)
+    print(f"✅ File {csv_filename} salvato per script successivi.")
+
+    # --- 3. GENERAZIONE GRAFICO ---
     mesi = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic']
     x = np.arange(len(mesi))
 
     fig, ax1 = plt.subplots(figsize=(10, 6))
 
+    # Precipitazioni
     color_precip = '#4ea4ff'
     bars = ax1.bar(x, climatology['precip'], color=color_precip, alpha=0.7, label='Precipitazioni (mm)')
     ax1.set_ylabel('Precipitazioni medie mensili (mm)', color='#005a9c', fontsize=11, fontweight='bold')
     ax1.tick_params(axis='y', labelcolor='#005a9c')
     ax1.set_xticks(x)
     ax1.set_xticklabels(mesi)
+    
+    # Limite precipitazioni richiesto (1.1)
     ax1.set_ylim(0, max(climatology['precip']) * 1.1)
 
+    # Temperature
     ax2 = ax1.twinx()
     color_tmax = '#d62728'
     color_tmin = '#1f77b4'
@@ -64,7 +77,7 @@ def main():
     t_min_val = min(climatology['tmin'])
     t_max_val = max(climatology['tmax'])
     range_t = t_max_val - t_min_val
-    ax2.set_ylim(t_min_val - range_t*0.2, t_max_val + range_t*0.4)
+    ax2.set_ylim(t_min_val - range_t*0.2, t_max_val + range_t*0.6)
 
     ax1.grid(axis='y', linestyle='--', alpha=0.5)
     plt.title('Climatologia Storica (1991-2020)\nTemperature Medie e Precipitazioni', fontsize=14, fontweight='bold', pad=15)
@@ -85,37 +98,51 @@ def main():
 
     plt.tight_layout()
 
-    # Salvataggio Immagine
     output_img = "climatologia_1991_2020.png"
     plt.savefig(output_img, dpi=200, bbox_inches='tight')
-    print("Grafico generato e salvato localmente.")
+    print("✅ Grafico salvato localmente.")
 
-    # --- INVIO A TELEGRAM ---
+    # --- 4. INVIO TELEGRAM (IMMAGINE + CSV) ---
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     thread_id = os.getenv("TELEGRAM_THREAD_ID_STORIA") 
     
     if token and chat_id:
-        url_telegram = f"https://api.telegram.org/bot{token}/sendPhoto"
-        
-        payload = {
+        # A) Invio Immagine
+        url_photo = f"https://api.telegram.org/bot{token}/sendPhoto"
+        payload_photo = {
             "chat_id": chat_id,
-            "caption": "📊 **Climatologia Storica 1991-2020**\nMedie mensili di temperature e precipitazioni elaborate dal dataset ERA5-Land.",
+            "caption": "📊 **Climatologia Storica 1991-2020**\nValori normali di temperatura e precipitazioni calcolati per Rivoli.",
             "parse_mode": "Markdown"
         }
-        
         if thread_id:
-            payload["message_thread_id"] = thread_id
+            payload_photo["message_thread_id"] = thread_id
             
         try:
             with open(output_img, "rb") as photo:
-                response = requests.post(url_telegram, data=payload, files={"photo": photo})
-                response.raise_for_status()
-            print("✅ Immagine inviata con successo su Telegram nel thread STORIA!")
+                requests.post(url_photo, data=payload_photo, files={"photo": photo})
+            print("✅ Immagine inviata con successo su Telegram!")
         except Exception as e:
-            print(f"❌ Eccezione Telegram: {e}")
+            print(f"❌ Eccezione invio immagine: {e}")
+
+        # B) Invio File CSV
+        url_doc = f"https://api.telegram.org/bot{token}/sendDocument"
+        payload_doc = {
+            "chat_id": chat_id,
+            "caption": "📁 File CSV con le medie mensili (1991-2020) per i successivi calcoli delle anomalie."
+        }
+        if thread_id:
+            payload_doc["message_thread_id"] = thread_id
+
+        try:
+            with open(csv_filename, "rb") as doc:
+                requests.post(url_doc, data=payload_doc, files={"document": doc})
+            print("✅ File CSV inviato con successo su Telegram!")
+        except Exception as e:
+            print(f"❌ Eccezione invio documento: {e}")
+
     else:
-        print("⚠️ Credenziali Telegram non trovate. Salto l'invio.")
+        print("⚠️ Credenziali Telegram mancanti, salto l'invio.")
 
 if __name__ == "__main__":
     main()
