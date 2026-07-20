@@ -38,48 +38,77 @@ def genera_dettaglio_classifica(df, year_target, metric, diff, unit):
         
     return f"{base_text} [dietro al {dettagli_str}]"
 
-def format_extreme(name, count, streak, df_storico, year_target, metric_name):
-    if count == 0:
-        return ""
+def format_extreme(name, count, streak, df_storico, year_target, count_col, streak_col):
+    # 1. CLASSIFICA CONTEGGIO TOTALE ASSOLUTO (COUNT)
+    better_high_c = df_storico[df_storico[count_col] > count].sort_values(by=count_col, ascending=False)
+    pos_desc_c = len(better_high_c) + 1
     
-    df_sorted = df_storico.sort_values(by=metric_name, ascending=False).reset_index(drop=True)
-    idx = df_sorted[df_sorted['year'] == year_target].index[0]
-    pos = idx + 1
-    
-    base_streak = f"max {int(streak)} consecutivi"
-    
-    if pos <= 10:
-        if pos == 1:
-            streak_text = f"({base_streak}, 🏆 Record dal 1940!)"
-        elif pos <= 5:
-            rows_above = df_sorted.iloc[:idx]
-            details = [f"{int(row['year'])} ({int(row[metric_name])})" for _, row in rows_above.iterrows()]
-            if len(details) > 10:
-                details_str = ", ".join(details[:10]) + f", ...e altri {len(details)-10}"
-            else:
-                details_str = ", ".join(details)
-            streak_text = f"({base_streak}, **{pos}°** serie più lunga [dietro al {details_str}])"
-        else:
-            streak_text = f"({base_streak}, **{pos}°** serie più lunga)"
-    else:
-        streak_text = f"({base_streak})"
-        
-    return f"{name}: {int(count)} {streak_text}\n"
+    better_low_c = df_storico[df_storico[count_col] < count].sort_values(by=count_col, ascending=True)
+    pos_asc_c = len(better_low_c) + 1
 
-# --- LOGICA PICCHI GIORNALIERI (TOP 5) ---
-def check_daily_extreme(df_daily, target_year, metric, is_hot):
+    count_text = f"{int(count)}"
+    
+    # Controllo Top 5 Maggior Numero
+    if pos_desc_c <= 5 and count > 0:
+        if pos_desc_c == 1:
+            count_text += " [🏆 Maggior numero dal 1940!]"
+        else:
+            details = [f"{int(row['year'])} ({int(row[count_col])})" for _, row in better_high_c.iterrows()]
+            details_str = ", ".join(details[:5]) + (f", ...e altri {len(details)-5}" if len(details)>5 else "")
+            count_text += f" [**{pos_desc_c}°** maggior numero dietro al {details_str}]"
+            
+    # Controllo Top 5 Minor Numero (Segnalato solo se mediamente ci si aspetta almeno 1 evento in quel periodo)
+    elif pos_asc_c <= 5 and df_storico[count_col].mean() >= 1.0: 
+        if pos_asc_c == 1:
+            count_text += " [🏆 Minor numero dal 1940!]"
+        else:
+            details = [f"{int(row['year'])} ({int(row[count_col])})" for _, row in better_low_c.iterrows()]
+            details_str = ", ".join(details[:5]) + (f", ...e altri {len(details)-5}" if len(details)>5 else "")
+            count_text += f" [**{pos_asc_c}°** minor numero dietro al {details_str}]"
+
+    # Anti-Spam: Se il conteggio è 0 e non rientra in nessun record, saltiamo la riga
+    if count == 0 and "[" not in count_text:
+        return ""
+
+    # 2. CLASSIFICA SERIE CONSECUTIVA (STREAK)
+    streak_text = ""
+    if streak > 0:
+        better_high_s = df_storico[df_storico[streak_col] > streak].sort_values(by=streak_col, ascending=False)
+        pos_desc_s = len(better_high_s) + 1
+        
+        base_streak = f"max {int(streak)} consecutivi"
+        
+        if pos_desc_s <= 10:
+            if pos_desc_s == 1:
+                streak_text = f"({base_streak}, 🏆 Record dal 1940!)"
+            elif pos_desc_s <= 5:
+                details = [f"{int(row['year'])} ({int(row[streak_col])})" for _, row in better_high_s.iterrows()]
+                details_str = ", ".join(details[:5]) + (f", ...e altri {len(details)-5}" if len(details)>5 else "")
+                streak_text = f"({base_streak}, **{pos_desc_s}°** serie più lunga [dietro al {details_str}])"
+            else:
+                streak_text = f"({base_streak}, **{pos_desc_s}°** serie più lunga)"
+        else:
+            streak_text = f"({base_streak})"
+
+    if streak_text:
+        return f"{name}: {count_text} {streak_text}\n"
+    else:
+        return f"{name}: {count_text}\n"
+
+# --- LOGICA PICCHI GIORNALIERI (TOP 5 ESTESA AI 4 POLI) ---
+def check_daily_extreme(df_daily, target_year, metric, is_highest):
     if df_daily.empty: return ""
     
     # Isola i dati dell'anno target per trovare il picco
     df_target = df_daily[df_daily['group_year'] == target_year]
     if df_target.empty: return ""
     
-    curr_val = df_target[metric].max() if is_hot else df_target[metric].min()
+    curr_val = df_target[metric].max() if is_highest else df_target[metric].min()
     # Prende la prima data in caso di picchi identici nello stesso anno
     curr_date = df_target[df_target[metric] == curr_val]['date'].iloc[0]
     
     # Ordina l'intero database storico (tutti i giorni dal 1940)
-    df_sorted = df_daily.sort_values(by=metric, ascending=not is_hot).reset_index(drop=True)
+    df_sorted = df_daily.sort_values(by=metric, ascending=not is_highest).reset_index(drop=True)
     idx = df_sorted[df_sorted['date'] == curr_date].index[0]
     pos = idx + 1
     
@@ -88,8 +117,8 @@ def check_daily_extreme(df_daily, target_year, metric, is_hot):
         return ""
         
     tipo = "T. Massima" if metric == 'tmax' else "T. Minima"
-    termine = "calda" if is_hot else "fredda"
-    base_text = f"**{pos}°** giornata con {tipo} più {termine} di sempre ({curr_val:.1f} °C il {curr_date.strftime('%d/%m/%Y')})"
+    termine = "più alta" if is_highest else "più bassa"
+    base_text = f"**{pos}°** {tipo} {termine} di sempre ({curr_val:.1f} °C il {curr_date.strftime('%d/%m/%Y')})"
     
     if pos == 1:
         return f"🚨 {base_text} [🏆 Record dal 1940!]\n"
@@ -180,7 +209,6 @@ def process_period(period_type, target_year, target_month=None, target_season=No
 
     print(f"\n🚀 Elaborazione {nome_periodo} in corso...")
 
-    # Aggiornate le coordinate per Torino centro (Lat 45.0703, Lon 7.6869)
     url = f"https://archive-api.open-meteo.com/v1/archive?latitude=45.0703&longitude=7.6869&start_date={start_date}&end_date={end_date}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&models=era5_seamless&timezone=auto"
     try:
         res = requests.get(url)
@@ -195,15 +223,17 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         return
 
     try:
-        # Assicurati di scaricare questo nuovo CSV e caricarlo su GitHub
         df_storico = pd.read_csv('open-meteo-torino-centro_1940_2025.csv', skiprows=3)
         df_storico.columns = ['date', 'tmax', 'tmin', 'precip']
         df_storico['date'] = pd.to_datetime(df_storico['date'])
         df_storico['year'] = df_storico['date'].dt.year
         df_storico['month'] = df_storico['date'].dt.month
 
-        df_storico = df_storico[~((df_storico['year'] == target_year) | (df_storico['year'] == target_year-1))]
+        # Unisce il CSV (fino al 2025 o anni successivi) con i giorni scaricati dall'API per il report attuale
         full_df = pd.concat([df_storico, api_df[['date', 'year', 'month', 'tmax', 'tmin', 'precip']]], ignore_index=True)
+        
+        # Elimina eventuali giorni sovrapposti tenendo validi i dati più recenti dell'API
+        full_df = full_df.drop_duplicates(subset=['date'], keep='last')
 
         df_filt = full_df[full_df['month'].isin(months_to_filter)].copy()
         
@@ -252,22 +282,27 @@ def process_period(period_type, target_year, target_month=None, target_season=No
                             f"❄️ T. Minima: {testo_tmin}\n"
                             f"🌧 Precipitazioni: {testo_precip}")
                             
-        # --- PICCHI GIORNALIERI ASSOLUTI (TOP 5) ---
-        txt_picco_max = check_daily_extreme(df_filt, target_year, 'tmax', is_hot=True)
-        txt_picco_min = check_daily_extreme(df_filt, target_year, 'tmin', is_hot=False)
+        # --- PICCHI GIORNALIERI ASSOLUTI (I 4 POLI ESTREMI) ---
+        txt_tmax_alta = check_daily_extreme(df_filt, target_year, 'tmax', is_highest=True)
+        txt_tmax_bassa = check_daily_extreme(df_filt, target_year, 'tmax', is_highest=False)
+        txt_tmin_alta = check_daily_extreme(df_filt, target_year, 'tmin', is_highest=True)
+        txt_tmin_bassa = check_daily_extreme(df_filt, target_year, 'tmin', is_highest=False)
         
-        if txt_picco_max or txt_picco_min:
-            testo_classifica += f"\n\n📈 **Record Giornalieri Raggiunti**\n{txt_picco_max}{txt_picco_min}"
+        picchi = [txt_tmax_alta, txt_tmin_alta, txt_tmax_bassa, txt_tmin_bassa]
+        testo_picchi = "".join(p for p in picchi if p)
+        
+        if testo_picchi:
+            testo_classifica += f"\n\n📈 **Record Giornalieri Raggiunti**\n{testo_picchi}"
                             
-        # --- ESTREMI AGGIORNATI ---
-        txt_trop = format_extreme("🥵 Notti tropicali", curr['trop_n'], curr['trop_s'], totale_anni, target_year, 'trop_s')
-        txt_hot = format_extreme("☀️ Giorni roventi", curr['hot_d'], curr['hot_s'], totale_anni, target_year, 'hot_s')
+        # --- ESTREMI AGGIORNATI (CONTEGGIO ASSOLUTO + STRISCIA) ---
+        txt_trop = format_extreme("🥵 Notti tropicali", curr['trop_n'], curr['trop_s'], totale_anni, target_year, 'trop_n', 'trop_s')
+        txt_hot = format_extreme("☀️ Giorni roventi", curr['hot_d'], curr['hot_s'], totale_anni, target_year, 'hot_d', 'hot_s')
         
         if txt_trop or txt_hot:
             testo_classifica += f"\n\n🏖 **Estremi di Caldo**\n{txt_trop}{txt_hot}"
 
-        txt_frost = format_extreme("🥶 Notti gelide", curr['frost_d'], curr['frost_s'], totale_anni, target_year, 'frost_s')
-        txt_ice = format_extreme("🧊 Giorni di ghiaccio", curr['ice_d'], curr['ice_s'], totale_anni, target_year, 'ice_s')
+        txt_frost = format_extreme("🥶 Notti gelide", curr['frost_d'], curr['frost_s'], totale_anni, target_year, 'frost_d', 'frost_s')
+        txt_ice = format_extreme("🧊 Giorni di ghiaccio", curr['ice_d'], curr['ice_s'], totale_anni, target_year, 'ice_d', 'ice_s')
         
         if txt_frost or txt_ice:
             testo_classifica += f"\n\n❄️ **Estremi di Freddo**\n{txt_frost}{txt_ice}"
@@ -278,7 +313,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         diff_tmax = diff_tmin = diff_precip = 0
         curr = {'tmax': api_df['tmax'].mean(), 'tmin': api_df['tmin'].mean(), 'precip': api_df['precip'].sum()}
 
-    title = f"Report Climatico: {nome_periodo} vs Storico 1991-2020"
+    title = f"Report Torino Centro: {nome_periodo} vs Storico 1991-2020"
     filename = f"report_{lock_id}.png"
     generate_dashboard(curr['tmax'], curr['tmin'], curr['precip'], diff_tmax, diff_tmin, diff_precip, title, filename)
 
@@ -303,14 +338,24 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         except Exception as e:
             print(f"❌ Eccezione Telegram: {e}")
 
-# --- ESECUZIONE 100% AUTOMATICA (Calendario Perpetuo) ---
+# --- ESECUZIONE 100% AUTOMATICA E DINAMICA ---
 def main():
+    # 1. Prende la data esatta di oggi
     oggi = datetime.now()
-    data_target = oggi - timedelta(days=15)
-    m_target, y_target = data_target.month, data_target.year
     
+    # 2. Torna al 1° giorno del mese in corso e toglie 1 giorno per cadere esattamente alla fine del mese scorso
+    mese_scorso = oggi.replace(day=1) - timedelta(days=1)
+    
+    # 3. Estrae il mese e l'anno target
+    m_target = mese_scorso.month
+    y_target = mese_scorso.year
+    
+    print(f"Data odierna: {oggi.strftime('%d/%m/%Y')}. Calcolo automatico report per: Mese {m_target:02d}, Anno {y_target}")
+
+    # Lancia SEMPRE il report del mese appena concluso
     process_period('month', y_target, target_month=m_target)
     
+    # Riconoscimento automatico chiusura stagioni
     if m_target == 2: 
         process_period('season', y_target, target_season='winter')
     elif m_target == 5: 
@@ -320,6 +365,7 @@ def main():
     elif m_target == 11: 
         process_period('season', y_target, target_season='autumn')
     
+    # Riconoscimento automatico chiusura anno
     if m_target == 12: 
         process_period('year', y_target)
 
