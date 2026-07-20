@@ -22,9 +22,13 @@ jobs:
       - name: Installa dipendenze
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy matplotlib
+          pip install requests pandas numpy matplotlib
 
       - name: Esegui script di generazione
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID_STORIA: ${{ secrets.TELEGRAM_THREAD_ID_STORIA }}
         run: python crea_climogramma.py 
 
       - name: Salva il grafico nella repository (Commit & Push)
