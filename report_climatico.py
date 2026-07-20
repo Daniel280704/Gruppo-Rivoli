@@ -116,7 +116,7 @@ def check_daily_extreme(df_daily, target_year, metric, is_highest):
     if pos > 5:
         return ""
         
-    tipo = "T. Massima" if metric == 'tmax' else "T. Minima"
+    tipo = "Temperatura Massima" if metric == 'tmax' else "Temperatura Minima"
     termine = "più alta" if is_highest else "più bassa"
     base_text = f"**{pos}°** {tipo} {termine} di sempre ({curr_val:.1f} °C il {curr_date.strftime('%d/%m/%Y')})"
     
