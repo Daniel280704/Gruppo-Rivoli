@@ -1,3 +1,5 @@
+import os
+import requests
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -35,7 +37,10 @@ def crea_climogramma(csv_filename):
         bars = ax1.bar(x, precip_mean, color='#8ABEF0', label='Precipitazioni (mm)', zorder=2, width=0.7)
         ax1.set_ylabel('Precipitazioni medie mensili (mm)', color='#115B8F', fontweight='bold', fontsize=12)
         ax1.tick_params(axis='y', labelcolor='#115B8F')
-        ax1.set_ylim(0, max(precip_mean) + 40) # Margine per non tagliare le etichette
+        
+        # MODIFICA: Aumentato il margine superiore a +80 per abbassare visivamente le barre
+        ax1.set_ylim(0, max(precip_mean) + 80) 
+        
         ax1.grid(axis='y', linestyle='--', alpha=0.5, zorder=0)
 
         # Etichette sui valori di precipitazione
@@ -51,7 +56,9 @@ def crea_climogramma(csv_filename):
         line_tmin = ax2.plot(x, tmin_mean, marker='o', color='#1F77B4', linewidth=2.5, label='T. Min media (°C)')
 
         ax2.set_ylabel('Temperatura (°C)', fontweight='bold', fontsize=12)
-        ax2.set_ylim(min(tmin_mean) - 8, max(tmax_mean) + 10) # Margine per staccare le linee dai bordi
+        
+        # MODIFICA: Abbassato il limite inferiore a -15 per spingere le linee verso l'alto
+        ax2.set_ylim(min(tmin_mean) - 15, max(tmax_mean) + 10) 
 
         # Etichette sui valori di T. Massima
         for i, txt in enumerate(tmax_mean):
@@ -79,6 +86,24 @@ def crea_climogramma(csv_filename):
         plt.close()
         
         print(f"✅ Climogramma generato con successo! Salvato come: {nome_output}")
+
+        # --- INVIO TELEGRAM ---
+        token = os.getenv("TELEGRAM_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        thread_id = os.getenv("TELEGRAM_THREAD_ID_STORIA") 
+        
+        if token and chat_id:
+            caption = "📊 **Climogramma Storico (1991-2020) | Torino Centro**\nRegime pluviometrico e andamento delle temperature medie mensili di riferimento."
+            payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}
+            if thread_id: payload["message_thread_id"] = thread_id
+            
+            try:
+                with open(nome_output, "rb") as photo:
+                    res_tg = requests.post(f"https://api.telegram.org/bot{token}/sendPhoto", data=payload, files={"photo": photo})
+                    res_tg.raise_for_status()
+                print("✅ Inviato con successo sul thread Telegram!")
+            except Exception as e:
+                print(f"❌ Eccezione durante l'invio Telegram: {e}")
 
     except FileNotFoundError:
         print(f"❌ Errore: Il file {csv_filename} non è stato trovato. Assicurati che sia nella stessa cartella.")
