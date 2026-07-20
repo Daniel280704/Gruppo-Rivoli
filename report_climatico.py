@@ -55,7 +55,7 @@ def format_extreme(name, count, streak, df_storico, year_target, count_col, stre
         else:
             details = [f"{int(row['year'])} ({int(row[count_col])})" for _, row in better_high_c.iterrows()]
             details_str = ", ".join(details[:5]) + (f", ...e altri {len(details)-5}" if len(details)>5 else "")
-            count_text += f" [**{pos_desc_c}°** maggior numero dietro al {details_str}]"
+            count_text += f" [- {pos_desc_c}° maggior numero dietro al {details_str} -]"
             
     # Controllo Top 5 Minor Numero (Segnalato solo se mediamente ci si aspetta almeno 1 evento in quel periodo)
     elif pos_asc_c <= 5 and df_storico[count_col].mean() >= 1.0: 
@@ -64,7 +64,7 @@ def format_extreme(name, count, streak, df_storico, year_target, count_col, stre
         else:
             details = [f"{int(row['year'])} ({int(row[count_col])})" for _, row in better_low_c.iterrows()]
             details_str = ", ".join(details[:5]) + (f", ...e altri {len(details)-5}" if len(details)>5 else "")
-            count_text += f" [**{pos_asc_c}°** minor numero dietro al {details_str}]"
+            count_text += f" [- {pos_asc_c}° minor numero dietro al {details_str} -]"
 
     # Anti-Spam: Se il conteggio è 0 e non rientra in nessun record, saltiamo la riga
     if count == 0 and "[" not in count_text:
@@ -84,9 +84,9 @@ def format_extreme(name, count, streak, df_storico, year_target, count_col, stre
             elif pos_desc_s <= 5:
                 details = [f"{int(row['year'])} ({int(row[streak_col])})" for _, row in better_high_s.iterrows()]
                 details_str = ", ".join(details[:5]) + (f", ...e altri {len(details)-5}" if len(details)>5 else "")
-                streak_text = f"({base_streak}, **{pos_desc_s}°** serie più lunga [dietro al {details_str}])"
+                streak_text = f"({base_streak}, {pos_desc_s}° serie più lunga [dietro al {details_str}])"
             else:
-                streak_text = f"({base_streak}, **{pos_desc_s}°** serie più lunga)"
+                streak_text = f"({base_streak}, {pos_desc_s}° serie più lunga)"
         else:
             streak_text = f"({base_streak})"
 
