@@ -313,7 +313,7 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         diff_tmax = diff_tmin = diff_precip = 0
         curr = {'tmax': api_df['tmax'].mean(), 'tmin': api_df['tmin'].mean(), 'precip': api_df['precip'].sum()}
 
-    title = f"Report Torino Centro: {nome_periodo} vs Storico 1991-2020"
+    title = f"Report Rivoli (TO): {nome_periodo} vs Storico 1991-2020"
     filename = f"report_{lock_id}.png"
     generate_dashboard(curr['tmax'], curr['tmin'], curr['precip'], diff_tmax, diff_tmin, diff_precip, title, filename)
 
