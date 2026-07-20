@@ -19,11 +19,9 @@ def crea_climogramma(csv_filename):
         df_baseline = df[(df['year'] >= 1991) & (df['year'] <= 2020)]
 
         print("Calcolo delle medie mensili 1991-2020...")
-        # Per le temperature: calcoliamo la media di tutte le massime e minime giornaliere per ogni mese
         tmax_mean = df_baseline.groupby('month')['tmax'].mean()
         tmin_mean = df_baseline.groupby('month')['tmin'].mean()
 
-        # Per le precipitazioni: prima sommiamo la pioggia mese per mese in ogni singolo anno, poi ne facciamo la media
         precip_monthly_sum = df_baseline.groupby(['year', 'month'])['precip'].sum().reset_index()
         precip_mean = precip_monthly_sum.groupby('month')['precip'].mean()
 
@@ -38,9 +36,36 @@ def crea_climogramma(csv_filename):
         ax1.set_ylabel('Precipitazioni medie mensili (mm)', color='#115B8F', fontweight='bold', fontsize=12)
         ax1.tick_params(axis='y', labelcolor='#115B8F')
         
-        # MODIFICA: Aumentato il margine superiore a +80 per abbassare visivamente le barre
-        ax1.set_ylim(0, max(precip_mean) + 80) 
+        # --- LOGICA SPLIT 45% / 10% / 45% ---
+        # 1. Precipitazioni (Dal 0% al 45%)
+        p_max = max(precip_mean) + 5 # Piccolo margine visivo sopra la barra più alta
+        ax1_ymax = p_max / 0.45      # p_max diventa matematicamente il 45% dell'altezza totale
+        ax1.set_ylim(0, ax1_ymax)
         
+        # 2. Temperature (Dal 55% al 95% - lasciamo 5% di respiro in alto)
+        t_low = min(tmin_mean) - 2   # Temperatura minima raggiunta
+        t_high = max(tmax_mean) + 2  # Temperatura massima raggiunta
+        delta_t = t_high - t_low     # Escursione termica media totale
+        
+        # delta_t deve stare dentro uno spazio del 40% (95 - 55). 
+        # Calcoliamo quindi l'estensione totale teorica dell'asse destro:
+        range_t_totale = delta_t / 0.40 
+        ax2_ymin = t_low - (0.55 * range_t_totale) # Il pavimento parte molto sotto t_low
+        ax2_ymax = t_high + (0.05 * range_t_totale) # Il soffitto è poco sopra t_high
+
+        ax2 = ax1.twinx()
+        ax2.set_ylim(ax2_ymin, ax2_ymax)
+        
+        # --- PULIZIA DELLE ETICHETTE SUGLI ASSI (TICKS) ---
+        # Evitiamo che i numeri della pioggia salgano nel vuoto e quelli della temperatura scendano
+        step_p = 20 if p_max > 50 else 10
+        ax1.set_yticks(np.arange(0, p_max + step_p, step_p))
+        
+        step_t = 5
+        t_start = np.floor(t_low / step_t) * step_t
+        t_end = np.ceil(t_high / step_t) * step_t
+        ax2.set_yticks(np.arange(t_start, t_end + step_t, step_t))
+
         ax1.grid(axis='y', linestyle='--', alpha=0.5, zorder=0)
 
         # Etichette sui valori di precipitazione
@@ -49,22 +74,15 @@ def crea_climogramma(csv_filename):
             ax1.text(bar.get_x() + bar.get_width()/2., height + 2,
                      f'{int(round(height))}', ha='center', va='bottom', color='#115B8F', fontsize=10, fontweight='bold')
 
-        # Asse Y Destro: Temperature (Linee)
-        ax2 = ax1.twinx()
-        
+        # Linee Temperature
         line_tmax = ax2.plot(x, tmax_mean, marker='o', color='#D62728', linewidth=2.5, label='T. Max media (°C)')
         line_tmin = ax2.plot(x, tmin_mean, marker='o', color='#1F77B4', linewidth=2.5, label='T. Min media (°C)')
 
         ax2.set_ylabel('Temperatura (°C)', fontweight='bold', fontsize=12)
-        
-        # MODIFICA: Abbassato il limite inferiore a -15 per spingere le linee verso l'alto
-        ax2.set_ylim(min(tmin_mean) - 15, max(tmax_mean) + 10) 
 
-        # Etichette sui valori di T. Massima
+        # Etichette sui valori di T. Massima e Minima
         for i, txt in enumerate(tmax_mean):
             ax2.text(x[i], txt + 0.8, f'{txt:.1f}', ha='center', va='bottom', color='#D62728', fontsize=10, fontweight='bold')
-
-        # Etichette sui valori di T. Minima
         for i, txt in enumerate(tmin_mean):
             ax2.text(x[i], txt - 1.8, f'{txt:.1f}', ha='center', va='top', color='#1F77B4', fontsize=10, fontweight='bold')
 
