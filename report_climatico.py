@@ -51,7 +51,7 @@ def format_extreme(name, count, streak, df_storico, year_target, count_col, stre
     # Controllo Top 5 Maggior Numero
     if pos_desc_c <= 5 and count > 0:
         if pos_desc_c == 1:
-            count_text += " [🏆 Maggior numero dal 1940!]"
+            count_text += " [- 🏆 Maggior numero dal 1940! -]"
         else:
             details = [f"{int(row['year'])} ({int(row[count_col])})" for _, row in better_high_c.iterrows()]
             details_str = ", ".join(details[:5]) + (f", ...e altri {len(details)-5}" if len(details)>5 else "")
@@ -60,7 +60,7 @@ def format_extreme(name, count, streak, df_storico, year_target, count_col, stre
     # Controllo Top 5 Minor Numero (Segnalato solo se mediamente ci si aspetta almeno 1 evento in quel periodo)
     elif pos_asc_c <= 5 and df_storico[count_col].mean() >= 1.0: 
         if pos_asc_c == 1:
-            count_text += " [🏆 Minor numero dal 1940!]"
+            count_text += " [- 🏆 Minor numero dal 1940! -]"
         else:
             details = [f"{int(row['year'])} ({int(row[count_col])})" for _, row in better_low_c.iterrows()]
             details_str = ", ".join(details[:5]) + (f", ...e altri {len(details)-5}" if len(details)>5 else "")
@@ -278,8 +278,8 @@ def process_period(period_type, target_year, target_month=None, target_season=No
         testo_precip = genera_dettaglio_classifica(totale_anni, target_year, 'precip', diff_precip, "mm")
 
         testo_classifica = (f"\n\n🏆 **Classifica Storica (su {len(totale_anni)} anni)**\n"
-                            f"🌡 T. Massima: {testo_tmax}\n"
-                            f"❄️ T. Minima: {testo_tmin}\n"
+                            f"🌡 Temperatura Massima: {testo_tmax}\n"
+                            f"❄️ Temperatura Minima: {testo_tmin}\n"
                             f"🌧 Precipitazioni: {testo_precip}")
                             
         # --- PICCHI GIORNALIERI ASSOLUTI (I 4 POLI ESTREMI) ---
