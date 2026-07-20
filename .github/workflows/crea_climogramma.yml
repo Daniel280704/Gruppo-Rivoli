@@ -1,0 +1,37 @@
+name: Genera Climogramma Storico
+
+on:
+  workflow_dispatch:
+    # Pulsante per l'avvio manuale (nessuna schedulazione automatica)
+
+jobs:
+  genera_grafico:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write 
+
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy matplotlib
+
+      - name: Esegui script di generazione
+        run: python crea_climogramma.py 
+
+      - name: Salva il grafico nella repository (Commit & Push)
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add climogramma_1991_2020_torino.png || true
+          git commit -m "Generato climogramma storico 1991-2020 Torino Centro [skip ci]" || echo "Nessuna modifica al grafico"
+          git pull --rebase origin main
+          git push
