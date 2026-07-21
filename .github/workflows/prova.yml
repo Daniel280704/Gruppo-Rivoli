@@ -22,7 +22,7 @@ jobs:
       - name: Install System Dependencies (per Metview)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libnetcdf-dev libnetcdff-dev libgl1-mesa-glx
+          sudo apt-get install -y libnetcdf-dev libnetcdff-dev libgl1
 
       - name: Install Conda and Metview
         uses: conda-incubator/setup-miniconda@v2
