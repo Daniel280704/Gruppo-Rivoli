@@ -168,7 +168,7 @@ def interpella_groq(report_tecnico, giorno_str):
     2. LINGUAGGIO SCIENTIFICO MA CHIARO: Sei rivolto a un pubblico appassionato. Intercetta la complessità della colonna atmosferica: cita il lapse rate tra 850-500hPa per l'instabilità termica e tra 500-300hPa per la divergenza in quota.
     3. FENOMENOLOGIA: Giustifica le stime di Grandine e Downburst fornite dal modello usando i parametri (es. "La grandine di Livello 4 è supportata dai violenti updraft e dal CAPE elevato", "Il forte rischio downburst è dettato dalla secchezza a 700hPa").
     4. CINEMATICA E SHEAR: Usa LLS (0-1km) e DLS (0-6km) per la struttura temporalesca (Cella singola, Multicella, potenziale Supercella). Usa il Vettore Traslazione per ipotizzare l'evoluzione temporale e stazionarietà.
-    5. Non superare i tre/quattro paragrafi ben strutturati e leggibili. Nessuna raccomandazione di protezione civile.
+    5. Non superare i tre/quattro paragrafi ben strutturati e leggibili. Nessuna raccomandazione di protezione civile. DIVIETO ASSOLUTO DI FORMATTAZIONE HTML (non usare mai tag come <br>, <b>, <i> o simili).
     """
 
     try:
@@ -340,6 +340,9 @@ def main():
         giorno_formattato = datetime.strptime(data_str, "%Y-%m-%d").strftime("%d/%m/%Y")
         print(f"[{giorno_formattato}] Elaborazione responso diagnostico sulla finestra pre-convettiva tramite Groq...")
         responso = interpella_groq(report_dati, giorno_formattato)
+
+        if responso and non responso.startswith("Errore AI Groq"):
+            responso = responso.replace("<", "&lt;").replace(">", "&gt;")
         
         corpo_messaggio += f"📅 <b>Target: {giorno_formattato}</b>\n\n{responso}\n\n➖➖➖➖➖➖➖➖➖➖\n\n"
         inviato_almeno_uno = True
