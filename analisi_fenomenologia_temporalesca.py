@@ -10,7 +10,6 @@ LAT = 45.0734521841099
 LON = 7.543386286825349
 
 def scomposizione_vettoriale(speed_kmh, direction_deg):
-    """Converte velocità e direzione di provenienza in vettori U e V (m/s)."""
     if speed_kmh is None or direction_deg is None:
         return 0.0, 0.0
     speed_ms = speed_kmh / 3.6
@@ -20,29 +19,22 @@ def scomposizione_vettoriale(speed_kmh, direction_deg):
     return u, v
 
 def calcola_vettore_traslazione(u, v):
-    """Calcola la velocità (km/h) e la direzione VERSO CUI punta il vettore (gradi)."""
     speed_ms = math.sqrt(u**2 + v**2)
     speed_kmh = speed_ms * 3.6
     direction_deg = (math.degrees(math.atan2(u, v)) + 360) % 360
     return speed_kmh, direction_deg
 
 def formatta_direzione_bussola(gradi):
-    """Converte l'angolo di traslazione in testo per evitare allucinazioni dell'AI."""
     direzioni = ["Nord", "Nord-Est", "Est", "Sud-Est", "Sud", "Sud-Ovest", "Ovest", "Nord-Ovest"]
     indice = round(gradi / 45) % 8
     return direzioni[indice]
 
 def magnitudo_shear(u1, v1, u2, v2):
-    """Calcola la magnitudo (m/s) della differenza vettoriale."""
     if None in (u1, v1, u2, v2):
         return None
     return math.sqrt((u2 - u1)**2 + (v2 - v1)**2)
 
 def check_probabilita_precipitazione():
-    """
-    Controlla la probabilità di precipitazione massima GIORNALIERA per D2 e CH2.
-    Restituisce i giorni (oggi e/o domani) che superano le soglie.
-    """
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": LAT, "longitude": LON,
@@ -51,33 +43,26 @@ def check_probabilita_precipitazione():
         "timezone": "Europe/Rome",
         "forecast_days": 3
     }
-    
     try:
         resp = requests.get(url, params=params, timeout=30)
         resp.raise_for_status()
         data = resp.json()
         daily = data.get("daily", {})
-        
         times = daily.get("time", [])
         prob_d2 = daily.get("precipitation_probability_max_dwd_icon_d2", [])
         prob_ch2 = daily.get("precipitation_probability_max_meteoswiss_icon_ch2", [])
-        
         giorni_validi = []
-        
         for i in range(min(2, len(times))):
             d2_val = prob_d2[i] if len(prob_d2) > i and prob_d2[i] is not None else 0
             ch2_val = prob_ch2[i] if len(prob_ch2) > i and prob_ch2[i] is not None else 0
-            
             if (d2_val >= 15 or ch2_val >= 15) or (d2_val >= 10 and ch2_val >= 10):
                 giorni_validi.append(times[i])
-                
         return giorni_validi
     except Exception as e:
         print(f"⚠️ Errore nel download Probabilità Precipitazione: {e}")
         return []
 
 def fetch_dati_termodinamici():
-    """Scarica la colonna termodinamica avanzata (ICON-D2) e la probabilità oraria di entrambi i modelli."""
     url = "https://api.open-meteo.com/v1/forecast"
     hourly_params = (
         "precipitation_probability," 
@@ -88,19 +73,10 @@ def fetch_dati_termodinamici():
         "wind_direction_1000hPa,wind_direction_975hPa,wind_direction_950hPa,wind_direction_925hPa,wind_direction_900hPa,wind_direction_850hPa,wind_direction_800hPa,wind_direction_700hPa,wind_direction_600hPa,wind_direction_500hPa,wind_direction_400hPa,wind_direction_300hPa,wind_direction_250hPa,wind_direction_200hPa,"
         "geopotential_height_1000hPa,geopotential_height_975hPa,geopotential_height_950hPa,geopotential_height_925hPa,geopotential_height_900hPa,geopotential_height_850hPa,geopotential_height_800hPa,geopotential_height_700hPa,geopotential_height_600hPa,geopotential_height_500hPa,geopotential_height_400hPa,geopotential_height_300hPa,geopotential_height_250hPa,geopotential_height_200hPa"
     )
-    
-    params = {
-        "latitude": LAT, "longitude": LON, 
-        "models": "dwd_icon_d2,meteoswiss_icon_ch2", 
-        "hourly": hourly_params,
-        "timezone": "Europe/Rome", "forecast_days": 3
-    }
-    resp = requests.get(url, params=params, timeout=40)
-    resp.raise_for_status()
-    return resp.json()['hourly']
+    params = {"latitude": LAT, "longitude": LON, "models": "dwd_icon_d2,meteoswiss_icon_ch2", "hourly": hourly_params, "timezone": "Europe/Rome", "forecast_days": 3}
+    return requests.get(url, params=params, timeout=40).json()['hourly']
 
 def fetch_ecmwf_pwat():
-    """Scarica l'acqua precipitabile da ECMWF per stimare l'intensità piovana e i nubifragi."""
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": LAT, "longitude": LON,
@@ -127,7 +103,6 @@ def min_sicuro(lista):
     return min(valori_validi) if valori_validi else None
 
 def stima_intensita_pioggia_tecnico(pwat):
-    """Valuta il rischio nubifragi basandosi sull'acqua precipitabile."""
     if pwat >= 40: return "VIOLENTA / NUBIFRAGIO. Atmosfera tropicale (PWAT >= 40 mm), altissimo rischio di flash flood locale."
     if pwat >= 30: return "MOLTO FORTE. Elevato carico precipitabile (PWAT >= 30 mm)."
     return "FORTE. Temporale ordinario, PWAT nella norma (< 30 mm)."
@@ -137,20 +112,13 @@ def stima_grandine(cape, updraft, dls, zero_termico, spessore_nube):
     updraft = updraft or 0
     dls = dls or 0
     spessore_nube = spessore_nube or 0
-    
-    if cape < 200 or spessore_nube < 3000:
-        return "Livello 0 su 5 - Assente (assenza di convezione profonda)"
-    if updraft > 15 or cape > 2500 or (cape > 1500 and dls > 25):
-        return "Livello 5 su 5 - ESTREMA (> 5 cm). Fortissimi updraft, rischio mesociclone isolato, chicchi distruttivi."
-    if updraft > 8 or cape > 1500 or (cape > 1000 and dls > 20):
-        return "Livello 4 su 5 - GROSSA (3 - 5 cm). Updraft intensi e sostenuti, probabili supercelle."
-    if updraft > 4 or cape > 800 or (cape > 500 and dls > 15):
-        return "Livello 3 su 5 - MEDIA (1.5 - 3 cm). Celle multicellulari ben organizzate, possibili accumuli al suolo."
+    if cape < 200 or spessore_nube < 3000: return "Livello 0 su 5 - Assente (assenza di convezione profonda)"
+    if updraft > 15 or cape > 2500 or (cape > 1500 and dls > 25): return "Livello 5 su 5 - ESTREMA (> 5 cm). Fortissimi updraft, rischio mesociclone isolato, chicchi distruttivi."
+    if updraft > 8 or cape > 1500 or (cape > 1000 and dls > 20): return "Livello 4 su 5 - GROSSA (3 - 5 cm). Updraft intensi e sostenuti, probabili supercelle."
+    if updraft > 4 or cape > 800 or (cape > 500 and dls > 15): return "Livello 3 su 5 - MEDIA (1.5 - 3 cm). Celle multicellulari ben organizzate, possibili accumuli al suolo."
     if updraft > 1.5 or cape > 400:
-        if zero_termico is not None and zero_termico > 4000:
-            return "Livello 1 su 5 - GRAUPEL/FUSIONE. Fusione dei piccoli chicchi per via dello zero termico molto alto."
+        if zero_termico is not None and zero_termico > 4000: return "Livello 1 su 5 - GRAUPEL/FUSIONE. Fusione dei piccoli chicchi per via dello zero termico molto alto."
         return "Livello 2 su 5 - PICCOLA (< 1.5 cm). Strutture a cella singola con rapido collasso precipitativo."
-        
     return "Livello 0 su 5 - Assente o trascurabile."
 
 def stima_downburst(rh_700, rh_500, lapse_rate, wind_gust, dls):
@@ -159,26 +127,17 @@ def stima_downburst(rh_700, rh_500, lapse_rate, wind_gust, dls):
     lapse_rate = lapse_rate or 5.0
     wind_gust = wind_gust or 0
     dls = dls or 0
-    
     rh_medio_secco = (rh_700 + rh_500) / 2
-
-    if rh_medio_secco < 40 and lapse_rate > 7.5 and wind_gust > 80:
-        return "Livello 5 su 5 - ESTREMO / MICROBURST. Aria secchissima in quota e gradienti violenti. Rischio venti distruttivi (> 100 km/h)."
-    if rh_medio_secco < 50 and lapse_rate > 7.0 and wind_gust > 60:
-        return "Livello 4 su 5 - GRAVE. Forti raffiche discendenti (Dry Downburst) alimentate da rapida evaporazione. Venti > 80 km/h."
-    if wind_gust > 70 or (rh_medio_secco < 60 and lapse_rate > 6.5 and dls > 15):
-        return "Livello 3 su 5 - FORTE. Wet/Dry Downburst capaci di sradicamenti isolati o danni minori (< 80 km/h)."
-    if wind_gust > 50 or lapse_rate > 6.0:
-        return "Livello 2 su 5 - MODERATO. Outflow classico da temporale estivo multicellulare (< 70 km/h)."
-        
+    if rh_medio_secco < 40 and lapse_rate > 7.5 and wind_gust > 80: return "Livello 5 su 5 - ESTREMO / MICROBURST. Aria secchissima in quota e gradienti violenti. Rischio venti distruttivi (> 100 km/h)."
+    if rh_medio_secco < 50 and lapse_rate > 7.0 and wind_gust > 60: return "Livello 4 su 5 - GRAVE. Forti raffiche discendenti (Dry Downburst) alimentate da rapida evaporazione. Venti > 80 km/h."
+    if wind_gust > 70 or (rh_medio_secco < 60 and lapse_rate > 6.5 and dls > 15): return "Livello 3 su 5 - FORTE. Wet/Dry Downburst capaci di sradicamenti isolati o danni minori (< 80 km/h)."
+    if wind_gust > 50 or lapse_rate > 6.0: return "Livello 2 su 5 - MODERATO. Outflow classico da temporale estivo multicellulare (< 70 km/h)."
     return "Livello 1 su 5 - DEBOLE. Outflow boundary ordinario, brezze rinfrescanti o raffiche non pericolose."
 
 def interpella_groq(report_tecnico, giorno_str):
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key: return "Errore: Manca la chiave API di Groq."
-        
     client = Groq(api_key=api_key)
-    
     prompt = f"""
     Sei un meteorologo esperto in dinamiche convettive. Analizza il bollettino termodinamico per il {giorno_str} a Rivoli (TO).
     I dati derivano dalla colonna verticale 1000-200 hPa catturata nel momento di massimo vigore pre-convettivo.
@@ -193,13 +152,8 @@ def interpella_groq(report_tecnico, giorno_str):
     4. CINEMATICA E SHEAR (CRITICO): Usa LLS (0-1 km) e DLS (0-6 km) per dedurre la struttura temporalesca. Limitati SOLAMENTE a queste diciture: Cella singola, Temporale multicellulare o Supercella. È VIETATO usare espressioni ripetitive come "cella multicellulare" o termini come "squall line". Usa il Vettore Traslazione per indicare verso dove si sposterà il temporale.
     5. Non superare i tre/quattro paragrafi ben strutturati e leggibili. Nessuna raccomandazione di protezione civile. DIVIETO ASSOLUTO DI FORMATTAZIONE HTML (non usare mai tag come <br>, <b>, <i> o simili).
     """
-
     try:
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            temperature=0.25,
-        )
+        chat_completion = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.3-70b-versatile", temperature=0.25)
         return chat_completion.choices[0].message.content
     except Exception as e:
         return f"Errore AI Groq: {e}"
@@ -222,14 +176,21 @@ def main():
     
     corpo_messaggio = ""
     inviato_almeno_uno = False
+    adesso = datetime.now()
 
     for data_str in giorni_validi:
         indici_giorno = [i for i, t in enumerate(hourly['time']) if t.startswith(data_str)]
         if not indici_giorno: continue
             
+        # FILTRO FONDAMENTALE: scarta le ore già passate per evitare allerte su temporali notturni
+        indici_futuri = [i for i in indici_giorno if datetime.fromisoformat(hourly['time'][i]) >= adesso.replace(minute=0, second=0, microsecond=0)]
+        
+        if not indici_futuri:
+            continue # La giornata è ormai conclusa o le ore sono tutte passate
+
         idx_picco = -1
         
-        for i in indici_giorno:
+        for i in indici_futuri:
             prob_d2 = hourly.get('precipitation_probability_dwd_icon_d2', [])
             prob_ch2 = hourly.get('precipitation_probability_meteoswiss_icon_ch2', [])
             
@@ -241,7 +202,13 @@ def main():
                 break
 
         if idx_picco == -1:
-            idx_picco = [i for i in indici_giorno if hourly['time'][i].endswith("16:00")][0]
+            idx_16 = [i for i in indici_futuri if hourly['time'][i].endswith("16:00")]
+            if idx_16:
+                idx_picco = idx_16[0]
+                print(f"[{data_str}] Nessun innesco orario netto futuro, fallback alle 16:00.")
+            else:
+                print(f"[{data_str}] Rischio temporalesco nullo nelle ore rimanenti della giornata. Salto.")
+                continue
 
         indici_attivi = [idx for idx in range(idx_picco - 3, idx_picco + 1) if 0 <= idx < len(hourly['time'])]
         
@@ -324,7 +291,6 @@ def main():
         lls = magnitudo_shear(avg_u10, avg_v10, avg_u850, avg_v850)
         dls = magnitudo_shear(avg_u10, avg_v10, avg_u500, avg_v500)
         
-        # Steering Flow: Media vettoriale 850-700-500 hPa per calcolare lo spostamento
         u_cbl = (avg_u850 + avg_u700 + avg_u500) / 3
         v_cbl = (avg_v850 + avg_v700 + avg_v500) / 3
         trasl_kmh, trasl_dir = calcola_vettore_traslazione(u_cbl, v_cbl)
@@ -335,7 +301,6 @@ def main():
         ora_inizio_finestra = datetime.fromisoformat(hourly['time'][indici_attivi[0]]).strftime('%H:%M')
         ora_fine_finestra = datetime.fromisoformat(hourly['time'][indici_attivi[-1]]).strftime('%H:%M')
 
-        # Costruzione dinamica del report: ignora i valori nulli o a 0 per non confondere Groq
         report_lines = [
             f"Finestra Inflow Pre-Convettivo analizzata: {ora_inizio_finestra} - {ora_fine_finestra} (Innesco atteso attorno alle {ora_fine_finestra})"
         ]
@@ -382,9 +347,9 @@ def main():
         corpo_messaggio = corpo_messaggio.rstrip("➖➖➖➖➖➖➖➖➖➖\n\n")
         
         if any(giorno > oggi_str_formato_iso for giorno in giorni_validi):
-            titolo = "🌩 <b>PRE-AVVISO</b>\n\n"
+            titolo = "🌩 <b>PRE-AVVISO: RADIOSONDAGGIO CONVETTIVO CONDIZIONALE</b>\n\n"
         else:
-            titolo = "🌩 <b>AVVISO</b>\n\n"
+            titolo = "🌩 <b>AVVISO: RADIOSONDAGGIO CONVETTIVO CONDIZIONALE</b>\n\n"
             
         messaggio_telegram = titolo + corpo_messaggio
         
