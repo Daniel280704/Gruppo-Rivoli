@@ -94,6 +94,21 @@ def fetch_dati_termodinamici():
     resp.raise_for_status()
     return resp.json()['hourly']
 
+def fetch_ecmwf_pwat():
+    """Scarica l'acqua precipitabile da ECMWF per stimare l'intensità piovana e i nubifragi."""
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": LAT, "longitude": LON,
+        "models": "ecmwf_ifs",
+        "hourly": "total_column_integrated_water_vapour",
+        "timezone": "Europe/Rome",
+        "forecast_days": 3
+    }
+    try:
+        return requests.get(url, params=params, timeout=30).json()['hourly']
+    except: 
+        return None
+
 def media_sicura(lista):
     valori_validi = [x for x in lista if x is not None]
     return sum(valori_validi) / len(valori_validi) if valori_validi else None
@@ -105,6 +120,12 @@ def max_sicuro(lista):
 def min_sicuro(lista):
     valori_validi = [x for x in lista if x is not None]
     return min(valori_validi) if valori_validi else None
+
+def stima_intensita_pioggia_tecnico(pwat):
+    """Valuta il rischio nubifragi basandosi sull'acqua precipitabile."""
+    if pwat >= 40: return "VIOLENTA / NUBIFRAGIO. Atmosfera tropicale (PWAT >= 40 mm), altissimo rischio di flash flood locale."
+    if pwat >= 30: return "MOLTO FORTE. Elevato carico precipitabile (PWAT >= 30 mm)."
+    return "FORTE. Temporale ordinario, PWAT nella norma (< 30 mm)."
 
 def stima_grandine(cape, updraft, dls, zero_termico, spessore_nube):
     cape = cape or 0
@@ -162,9 +183,10 @@ def interpella_groq(report_tecnico, giorno_str):
 
     REGOLE RIGOROSE:
     1. INNESCABILITÀ CONDIZIONATA: Ricorda sempre che il setup è potenziale. Usa frasi come "Qualora l'innesco avvenga...", "Se l'inibizione viene vinta...".
-    2. LINGUAGGIO SCIENTIFICO: Intercetta la complessità della colonna atmosferica citando il lapse rate tra 850-500 hPa e tra 500-300 hPa per valutare l'instabilità termica.
+    2. LINGUAGGIO SCIENTIFICO: Intercetta la complessità della colonna atmosferica citando il lapse rate tra 850-500 hPa e tra 500-300 hPa per valutare l'instabilità termica. Analizza il rischio di nubifragio basandoti sul valore di PWAT.
     3. FENOMENOLOGIA E STIME (CRITICO): Devi descrivere ESCLUSIVAMENTE il livello di rischio effettivo raggiunto (es. "Livello 2 su 5") e giustificarlo, senza MAI sprecare parole per ipotizzare i livelli superiori che non verranno raggiunti. Per la grandine, devi esplicitare sempre la dimensione stimata in centimetri.
-    4. CINEMATICA E SHEAR (CRITICO): Usa LLS (0-1 km) e DLS (0-6 km) per dedurre la struttura temporalesca. Limitati SOLAMENTE a queste diciture: Cella singola, Multicella o Supercella. È VIETATO usare espressioni ripetitive come "cella multicellulare" o termini come "squall line". Usa il Vettore Traslazione per indicare verso dove si sposterà il temporale.
+    4. CINEMATICA E SHEAR (CRITICO): Usa LLS (0-1 km) e DLS (0-6 km) per dedurre la struttura temporalesca. Limitati SOLAMENTE a queste diciture: Cella singola, Temporale multicellulare o Supercella. È VIETATO usare espressioni ripetitive come "cella multicellulare" o termini come "squall line". Usa il Vettore Traslazione per indicare verso dove si sposterà il temporale.
+    5. Non superare i tre/quattro paragrafi ben strutturati e leggibili. Nessuna raccomandazione di protezione civile. DIVIETO ASSOLUTO DI FORMATTAZIONE HTML (non usare mai tag come <br>, <b>, <i> o simili).
     """
 
     try:
@@ -198,6 +220,7 @@ def main():
     print(f"Giorni con potenziale innesco individuati: {giorni_validi}")
     print("Scaricamento radiosondaggio predittivo completo 1000-200 hPa...")
     hourly = fetch_dati_termodinamici()
+    hourly_ecmwf = fetch_ecmwf_pwat()
     
     corpo_messaggio = ""
     inviato_almeno_uno = False
@@ -243,6 +266,13 @@ def main():
         t2m_max = max_sicuro([hourly['temperature_2m_dwd_icon_d2'][i] for i in indici_attivi])
         tdew_max = max_sicuro([hourly['dew_point_2m_dwd_icon_d2'][i] for i in indici_attivi])
         lcl_medio = 125 * (t2m_max - tdew_max) if t2m_max and tdew_max else None
+
+        if hourly_ecmwf:
+            pwat = max_sicuro([hourly_ecmwf['total_column_integrated_water_vapour'][i] for i in indici_attivi if i < len(hourly_ecmwf['total_column_integrated_water_vapour'])])
+        else:
+            pwat = 0
+            
+        stima_pioggia_tec = stima_intensita_pioggia_tecnico(pwat)
 
         lrs_850_500 = []
         lrs_500_300 = []
@@ -308,6 +338,8 @@ def main():
             f"Finestra Inflow Pre-Convettivo analizzata: {ora_inizio_finestra} - {ora_fine_finestra} (Innesco atteso attorno alle {ora_fine_finestra})"
         ]
         
+        if pwat > 0: 
+            report_lines.append(f"Acqua Precipitabile (PWAT - ECMWF): {pwat:.1f} mm (kg/m²)")
         if max_cape and max_cape > 0: 
             report_lines.append(f"Max CAPE: {max_cape:.0f} J/kg")
         if max_updraft and max_updraft > 0: 
@@ -329,7 +361,7 @@ def main():
         if trasl_kmh is not None and trasl_dir is not None:
             report_lines.append(f"Vettore Traslazione: {trasl_kmh:.1f} km/h verso {trasl_dir:.0f}°")
             
-        report_lines.append(f"\nANALISI ALGORITMICA SEVERITÀ:\nRischio Grandine: {stima_g}\nRischio Downburst: {stima_d}")
+        report_lines.append(f"\nANALISI ALGORITMICA SEVERITÀ:\nRischio Pioggia e Allagamenti: {stima_pioggia_tec}\nRischio Grandine: {stima_g}\nRischio Downburst: {stima_d}")
         
         report_dati = "\n".join(report_lines)
         
