@@ -34,7 +34,7 @@ def magnitudo_shear(u1, v1, u2, v2):
 
 def check_probabilita_precipitazione():
     """
-    Controlla la probabilità di precipitazione massima per D2 e CH2.
+    Controlla la probabilità di precipitazione massima GIORNALIERA per D2 e CH2.
     Restituisce i giorni (oggi e/o domani) che superano le soglie:
     >= 15% su almeno un modello, oppure >= 10% su entrambi.
     """
@@ -59,7 +59,6 @@ def check_probabilita_precipitazione():
         
         giorni_validi = []
         
-        # Limitiamo il controllo al giorno corrente (0) e al successivo (1)
         for i in range(min(2, len(times))):
             d2_val = prob_d2[i] if len(prob_d2) > i and prob_d2[i] is not None else 0
             ch2_val = prob_ch2[i] if len(prob_ch2) > i and prob_ch2[i] is not None else 0
@@ -73,10 +72,10 @@ def check_probabilita_precipitazione():
         return []
 
 def fetch_dati_certosini_d2():
-    """Scarica la colonna termodinamica avanzata e multiparametrica da ICON-D2."""
+    """Scarica la colonna termodinamica avanzata (ICON-D2) e la probabilità oraria di entrambi i modelli."""
     url = "https://api.open-meteo.com/v1/forecast"
-    # Costruzione stringa massiva dei parametri
     hourly_params = (
+        "precipitation_probability," # Aggiunto per ricavare l'ora di picco
         "temperature_2m,relative_humidity_2m,dew_point_2m,wind_gusts_10m,lightning_potential,updraft,convective_cloud_base,convective_cloud_top,cape,freezing_level_height,"
         "temperature_1000hPa,temperature_975hPa,temperature_950hPa,temperature_925hPa,temperature_900hPa,temperature_850hPa,temperature_800hPa,temperature_700hPa,temperature_600hPa,temperature_500hPa,temperature_400hPa,temperature_300hPa,temperature_250hPa,temperature_200hPa,"
         "relative_humidity_1000hPa,relative_humidity_975hPa,relative_humidity_950hPa,relative_humidity_925hPa,relative_humidity_900hPa,relative_humidity_850hPa,relative_humidity_800hPa,relative_humidity_700hPa,relative_humidity_600hPa,relative_humidity_500hPa,relative_humidity_400hPa,relative_humidity_300hPa,relative_humidity_250hPa,relative_humidity_200hPa,"
@@ -87,7 +86,7 @@ def fetch_dati_certosini_d2():
     
     params = {
         "latitude": LAT, "longitude": LON, 
-        "models": "dwd_icon_d2",
+        "models": "dwd_icon_d2,meteoswiss_icon_ch2", # Richiedo entrambi per incrociarli
         "hourly": hourly_params,
         "timezone": "Europe/Rome", "forecast_days": 3
     }
@@ -103,11 +102,14 @@ def max_sicuro(lista):
     valori_validi = [x for x in lista if x is not None]
     return max(valori_validi) if valori_validi else None
 
+def min_sicuro(lista):
+    valori_validi = [x for x in lista if x is not None]
+    return min(valori_validi) if valori_validi else None
+
 def formatta_sicuro(valore, template="{:.1f}"):
     return "N/D" if valore is None else template.format(valore)
 
 def stima_grandine_certosina(cape, updraft, dls, zero_termico, spessore_nube):
-    """Scaglioni avanzati per la magnitudo della grandine."""
     cape = cape or 0
     updraft = updraft or 0
     dls = dls or 0
@@ -115,16 +117,12 @@ def stima_grandine_certosina(cape, updraft, dls, zero_termico, spessore_nube):
     
     if cape < 200 or spessore_nube < 3000:
         return "Livello 0 - Assente (assenza di convezione profonda)"
-        
     if updraft > 15 or cape > 2500 or (cape > 1500 and dls > 25):
         return "Livello 5 - ESTREMA (> 5 cm). Fortissimi updraft, rischio mesociclone isolato, chicchi distruttivi."
-        
     if updraft > 8 or cape > 1500 or (cape > 1000 and dls > 20):
         return "Livello 4 - GROSSA (3 - 5 cm). Updraft intensi e sostenuti, probabili supercelle."
-        
     if updraft > 4 or cape > 800 or (cape > 500 and dls > 15):
         return "Livello 3 - MEDIA (1.5 - 3 cm). Celle multicellulari ben organizzate, possibili accumuli al suolo."
-        
     if updraft > 1.5 or cape > 400:
         if zero_termico is not None and zero_termico > 4000:
             return "Livello 1 - GRAUPEL/FUSIONE. Fusione dei piccoli chicchi per via dello zero termico molto alto."
@@ -133,7 +131,6 @@ def stima_grandine_certosina(cape, updraft, dls, zero_termico, spessore_nube):
     return "Livello 0 - Assente o trascurabile."
 
 def stima_downburst_certosina(rh_700, rh_500, lapse_rate, wind_gust, dls):
-    """Scaglioni avanzati per intensità raffiche lineari/downburst."""
     rh_700 = rh_700 or 100
     rh_500 = rh_500 or 100
     lapse_rate = lapse_rate or 5.0
@@ -144,13 +141,10 @@ def stima_downburst_certosina(rh_700, rh_500, lapse_rate, wind_gust, dls):
 
     if rh_medio_secco < 40 and lapse_rate > 7.5 and wind_gust > 80:
         return "Livello 5 - ESTREMO / MICROBURST. Aria secchissima in quota e gradienti violenti. Rischio venti distruttivi (> 100 km/h)."
-        
     if rh_medio_secco < 50 and lapse_rate > 7.0 and wind_gust > 60:
         return "Livello 4 - GRAVE. Forti raffiche discendenti (Dry Downburst) alimentate da rapida evaporazione. Venti > 80 km/h."
-        
     if wind_gust > 70 or (rh_medio_secco < 60 and lapse_rate > 6.5 and dls > 15):
         return "Livello 3 - FORTE. Wet/Dry Downburst capaci di sradicamenti isolati o danni minori (< 80 km/h)."
-        
     if wind_gust > 50 or lapse_rate > 6.0:
         return "Livello 2 - MODERATO. Raffiche frontali di squall-line o outflow classico da temporale estivo (< 70 km/h)."
         
@@ -164,9 +158,9 @@ def interpella_groq(report_tecnico, giorno_str):
     
     prompt = f"""
     Sei un meteorologo esperto in dinamiche convettive. Analizza il bollettino termodinamico "certosino" per il {giorno_str} a Rivoli (TO).
-    I dati derivano dalla colonna verticale 1000-200hPa.
+    I dati derivano dalla colonna verticale 1000-200hPa catturata nel momento di massimo vigore pre-convettivo.
 
-    DATI ESTRATTI NELLA FASCIA ORARIA CRITICA:
+    DATI ESTRATTI NELLA FASCIA ORARIA PRE-FRONTALE:
     {report_tecnico}
 
     REGOLE RIGOROSE:
@@ -198,96 +192,110 @@ def main():
                 print("✅ Analisi temporali già inviata oggi. Esecuzione terminata per evitare spam.")
                 sys.exit(0)
 
-    print("Ricerca inneschi: Analisi probabilità massime precipitazione D2/CH2...")
+    print("Ricerca inneschi: Analisi probabilità massime precipitazione giornaliera D2/CH2...")
     giorni_validi = check_probabilita_precipitazione()
     
     if not giorni_validi:
-        print("Analisi terminata: Nessuna probabilità di precipitazione rilevante (>=15% su un modello o >=10% su entrambi) nei prossimi giorni.")
+        print("Analisi terminata: Nessuna probabilità di precipitazione rilevante nei prossimi giorni.")
         return
 
     print(f"Giorni con potenziale innesco individuati: {giorni_validi}")
-    print("Scaricamento radiosondaggio predittivo completo 1000-200hPa ICON-D2...")
+    print("Scaricamento radiosondaggio predittivo completo 1000-200hPa...")
     hourly = fetch_dati_certosini_d2()
     
     corpo_messaggio = ""
     inviato_almeno_uno = False
 
     for data_str in giorni_validi:
-        indici_attivi = []
-        
-        # Identifica le ore critiche (updraft, fulmini o cape rilevante) nel giorno target
-        for i, t in enumerate(hourly['time']):
-            if t.startswith(data_str):
-                c_val = hourly['cape'][i] or 0
-                u_val = hourly['updraft'][i] or 0
-                l_val = hourly['lightning_potential'][i] or 0
-                if c_val > 100 or u_val > 0.05 or l_val > 0.1:
-                    indici_attivi.append(i)
-        
-        # Fallback: se la probabilità era alta ma i trigger orari deboli, analizza il pomeriggio
-        if not indici_attivi:
-            for i, t in enumerate(hourly['time']):
-                if t.startswith(data_str):
-                    hour = int(t.split('T')[1].split(':')[0])
-                    if 12 <= hour <= 20:
-                        indici_attivi.append(i)
-
-        if not indici_attivi:
+        indici_giorno = [i for i, t in enumerate(hourly['time']) if t.startswith(data_str)]
+        if not indici_giorno:
             continue
-
-        # --- ESTRAZIONE DATI MASIVA NELLE ORE ATTIVE ---
-        max_cape = max_sicuro([hourly['cape'][i] for i in indici_attivi])
-        max_updraft = max_sicuro([hourly['updraft'][i] for i in indici_attivi])
-        max_fulmini = max_sicuro([hourly['lightning_potential'][i] for i in indici_attivi])
-        max_gust = max_sicuro([hourly['wind_gusts_10m'][i] for i in indici_attivi])
+            
+        idx_picco = -1
         
-        # Geometria nube (Spessore)
-        c_bases = [hourly['convective_cloud_base'][i] for i in indici_attivi if hourly['convective_cloud_base'][i]]
-        c_tops = [hourly['convective_cloud_top'][i] for i in indici_attivi if hourly['convective_cloud_top'][i]]
-        spessore_nube = (max(c_tops) - min(c_bases)) if c_bases and c_tops else None
+        # Scansioniamo cronologicamente la giornata: cerchiamo la PRIMA ora di innesco
+        for i in indici_giorno:
+            prob_d2 = hourly.get('precipitation_probability_dwd_icon_d2', [])
+            prob_ch2 = hourly.get('precipitation_probability_meteoswiss_icon_ch2', [])
+            
+            p_d2 = prob_d2[i] if len(prob_d2) > i and prob_d2[i] is not None else 0
+            p_ch2 = prob_ch2[i] if len(prob_ch2) > i and prob_ch2[i] is not None else 0
+            
+            # Applichiamo la regola di innesco: 15% su almeno uno, oppure 10% su entrambi
+            if (p_d2 >= 15 or p_ch2 >= 15) or (p_d2 >= 10 and p_ch2 >= 10):
+                idx_picco = i
+                break # <-- FONDAMENTALE: Trovata la prima ora utile, fermiamo il ciclo!
 
-        # Livello Zero Termico e Base Nubi
-        z_termico = media_sicura([hourly['freezing_level_height'][i] for i in indici_attivi])
-        t2m_avg = media_sicura([hourly['temperature_2m'][i] for i in indici_attivi])
-        tdew_avg = media_sicura([hourly['dew_point_2m'][i] for i in indici_attivi])
-        lcl_medio = 125 * (t2m_avg - tdew_avg) if t2m_avg and tdew_avg else None
+        if idx_picco == -1:
+            # Fallback di sicurezza: se la prob. giornaliera era alta ma le singole ore
+            # non arrivano a soglia, analizza d'ufficio il cuore dell'instabilità diurna.
+            idx_picco = [i for i in indici_giorno if hourly['time'][i].endswith("16:00")][0]
+            print(f"[{data_str}] Nessun innesco orario netto trovato, fallback alle 16:00.")
 
-        # Gradienti Termici (Lapse Rates)
+        # CREAZIONE DELLA FINESTRA PRE-CONVETTIVA (Ambiente Vergine)
+        # Prende la primissima ora utile trovata e le 3 ore immediatamente precedenti
+        indici_attivi = [idx for idx in range(idx_picco - 3, idx_picco + 1) if 0 <= idx < len(hourly['time'])]
+        
+        # --- ESTRAZIONE DATI MASIVA NELLA FINESTRA PRE-CONVETTIVA (Scenario Peggiore) ---
+        # Si cerca il "max" assoluto di ogni variabile distruttiva
+        max_cape = max_sicuro([hourly['cape_dwd_icon_d2'][i] for i in indici_attivi])
+        max_updraft = max_sicuro([hourly['updraft_dwd_icon_d2'][i] for i in indici_attivi])
+        max_fulmini = max_sicuro([hourly['lightning_potential_dwd_icon_d2'][i] for i in indici_attivi])
+        max_gust = max_sicuro([hourly['wind_gusts_10m_dwd_icon_d2'][i] for i in indici_attivi])
+        
+        # Geometria nube (Spessore calcolato sul minimo della base e massimo del top nella finestra)
+        min_base = min_sicuro([hourly['convective_cloud_base_dwd_icon_d2'][i] for i in indici_attivi])
+        max_top = max_sicuro([hourly['convective_cloud_top_dwd_icon_d2'][i] for i in indici_attivi])
+        spessore_nube = (max_top - min_base) if min_base is not None and max_top is not None else None
+
+        z_termico = media_sicura([hourly['freezing_level_height_dwd_icon_d2'][i] for i in indici_attivi])
+        
+        # LCL calcolato sull'istante di massime temperature per simulare la partenza del moto convettivo
+        t2m_max = max_sicuro([hourly['temperature_2m_dwd_icon_d2'][i] for i in indici_attivi])
+        tdew_max = max_sicuro([hourly['dew_point_2m_dwd_icon_d2'][i] for i in indici_attivi])
+        lcl_medio = 125 * (t2m_max - tdew_max) if t2m_max and tdew_max else None
+
+        # Gradienti Termici (Lapse Rates) - Scelgo il più ripido (maggiore = più instabile)
         lrs_850_500 = []
         lrs_500_300 = []
         for i in indici_attivi:
-            t850, t500, t300 = hourly['temperature_850hPa'][i], hourly['temperature_500hPa'][i], hourly['temperature_300hPa'][i]
-            z850, z500, z300 = hourly['geopotential_height_850hPa'][i], hourly['geopotential_height_500hPa'][i], hourly['geopotential_height_300hPa'][i]
+            t850 = hourly['temperature_850hPa_dwd_icon_d2'][i]
+            t500 = hourly['temperature_500hPa_dwd_icon_d2'][i]
+            t300 = hourly['temperature_300hPa_dwd_icon_d2'][i]
+            z850 = hourly['geopotential_height_850hPa_dwd_icon_d2'][i]
+            z500 = hourly['geopotential_height_500hPa_dwd_icon_d2'][i]
+            z300 = hourly['geopotential_height_300hPa_dwd_icon_d2'][i]
+            
             if None not in (t850, t500, z850, z500) and z500 != z850:
                 lrs_850_500.append((t850 - t500) / ((z500 - z850) / 1000.0))
             if None not in (t500, t300, z500, z300) and z300 != z500:
                 lrs_500_300.append((t500 - t300) / ((z300 - z500) / 1000.0))
         
-        lr_basso = media_sicura(lrs_850_500)
-        lr_alto = media_sicura(lrs_500_300)
+        lr_basso = max_sicuro(lrs_850_500)
+        lr_alto = max_sicuro(lrs_500_300)
 
-        # Umidità per layer (medie vettoriali e aritmetiche)
-        rh_low = media_sicura([hourly[f'relative_humidity_{p}hPa'][i] for p in [1000, 925, 850] for i in indici_attivi])
-        rh_mid = media_sicura([hourly[f'relative_humidity_{p}hPa'][i] for p in [700, 600, 500] for i in indici_attivi])
-        rh_high = media_sicura([hourly[f'relative_humidity_{p}hPa'][i] for p in [400, 300, 200] for i in indici_attivi])
+        # Umidità Media del Layer
+        rh_low = media_sicura([hourly[f'relative_humidity_{p}hPa_dwd_icon_d2'][i] for p in [1000, 925, 850] for i in indici_attivi])
+        rh_mid = media_sicura([hourly[f'relative_humidity_{p}hPa_dwd_icon_d2'][i] for p in [700, 600, 500] for i in indici_attivi])
+        rh_high = media_sicura([hourly[f'relative_humidity_{p}hPa_dwd_icon_d2'][i] for p in [400, 300, 200] for i in indici_attivi])
         
-        rh_700_spec = media_sicura([hourly['relative_humidity_700hPa'][i] for i in indici_attivi])
-        rh_500_spec = media_sicura([hourly['relative_humidity_500hPa'][i] for i in indici_attivi])
+        rh_700_spec = min_sicuro([hourly['relative_humidity_700hPa_dwd_icon_d2'][i] for i in indici_attivi])
+        rh_500_spec = min_sicuro([hourly['relative_humidity_500hPa_dwd_icon_d2'][i] for i in indici_attivi])
 
-        # Vettori vento per calcolo Shear
+        # Vettori vento per calcolo Shear (media sulla finestra per avere il profilo dinamico stabile)
         u_10, v_10 = [], []
         u_850, v_850 = [], []
         u_700, v_700 = [], []
         u_500, v_500 = [], []
 
         for i in indici_attivi:
-            u, v = scomposizione_vettoriale(hourly['wind_speed_1000hPa'][i], hourly['wind_direction_1000hPa'][i])
+            u, v = scomposizione_vettoriale(hourly['wind_speed_1000hPa_dwd_icon_d2'][i], hourly['wind_direction_1000hPa_dwd_icon_d2'][i])
             u_10.append(u); v_10.append(v)
-            u, v = scomposizione_vettoriale(hourly['wind_speed_850hPa'][i], hourly['wind_direction_850hPa'][i])
+            u, v = scomposizione_vettoriale(hourly['wind_speed_850hPa_dwd_icon_d2'][i], hourly['wind_direction_850hPa_dwd_icon_d2'][i])
             u_850.append(u); v_850.append(v)
-            u, v = scomposizione_vettoriale(hourly['wind_speed_700hPa'][i], hourly['wind_direction_700hPa'][i])
+            u, v = scomposizione_vettoriale(hourly['wind_speed_700hPa_dwd_icon_d2'][i], hourly['wind_direction_700hPa_dwd_icon_d2'][i])
             u_700.append(u); v_700.append(v)
-            u, v = scomposizione_vettoriale(hourly['wind_speed_500hPa'][i], hourly['wind_direction_500hPa'][i])
+            u, v = scomposizione_vettoriale(hourly['wind_speed_500hPa_dwd_icon_d2'][i], hourly['wind_direction_500hPa_dwd_icon_d2'][i])
             u_500.append(u); v_500.append(v)
 
         avg_u10, avg_v10 = sum(u_10)/len(u_10), sum(v_10)/len(v_10)
@@ -300,22 +308,25 @@ def main():
         
         # Steering Flow: Media vettoriale 850-700-500hPa
         u_cbl = (avg_u850 + avg_u700 + avg_u500) / 3
-        v_cbl = (avg_v850 + avg_u700 + avg_v500) / 3
+        v_cbl = (avg_v850 + avg_v700 + avg_v500) / 3
         trasl_kmh, trasl_dir = calcola_magnitudo_direzione(u_cbl, v_cbl)
 
         # Output Scaglioni Dedicati
         stima_g = stima_grandine_certosina(max_cape, max_updraft, dls, z_termico, spessore_nube)
         stima_d = stima_downburst_certosina(rh_700_spec, rh_500_spec, lr_basso, max_gust, dls)
 
+        ora_inizio_finestra = datetime.fromisoformat(hourly['time'][indici_attivi[0]]).strftime('%H:%M')
+        ora_fine_finestra = datetime.fromisoformat(hourly['time'][indici_attivi[-1]]).strftime('%H:%M')
+
         report_dati = f"""
-        Finestra attiva analizzata: {datetime.fromisoformat(hourly['time'][indici_attivi[0]]).strftime('%H:%M')} - {datetime.fromisoformat(hourly['time'][indici_attivi[-1]]).strftime('%H:%M')}
+        Finestra Inflow Pre-Convettivo analizzata: {ora_inizio_finestra} - {ora_fine_finestra} (Innesco atteso attorno alle {ora_fine_finestra})
         Max CAPE: {formatta_sicuro(max_cape, "{:.0f}")} J/kg
-        Max Updraft ICON-D2: {formatta_sicuro(max_updraft, "{:.1f}")} m/s
+        Max Updraft: {formatta_sicuro(max_updraft, "{:.1f}")} m/s
         Lightning Potential Index: {formatta_sicuro(max_fulmini, "{:.1f}")}
         LCL (Base Nubi Medio): {formatta_sicuro(lcl_medio, "{:.0f}")} m
-        Spessore Nube Convettiva: {formatta_sicuro(spessore_nube, "{:.0f}")} m
-        Lapse Rate Basso (850-500hPa): {formatta_sicuro(lr_basso, "{:.1f}")} °C/km
-        Lapse Rate Alto (500-300hPa): {formatta_sicuro(lr_alto, "{:.1f}")} °C/km
+        Spessore Nube Convettiva (Max Estensione): {formatta_sicuro(spessore_nube, "{:.0f}")} m
+        Lapse Rate Basso Massimo (850-500hPa): {formatta_sicuro(lr_basso, "{:.1f}")} °C/km
+        Lapse Rate Alto Massimo (500-300hPa): {formatta_sicuro(lr_alto, "{:.1f}")} °C/km
         Umidità Layer (Bassa/Media/Alta): {formatta_sicuro(rh_low, "{:.0f}")}% / {formatta_sicuro(rh_mid, "{:.0f}")}% / {formatta_sicuro(rh_high, "{:.0f}")}%
         Deep Layer Shear (0-6km): {formatta_sicuro(dls, "{:.1f}")} m/s
         Low Level Shear (0-1km): {formatta_sicuro(lls, "{:.1f}")} m/s
@@ -327,7 +338,7 @@ def main():
         """
         
         giorno_formattato = datetime.strptime(data_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-        print(f"[{giorno_formattato}] Elaborazione responso diagnostico tramite Groq...")
+        print(f"[{giorno_formattato}] Elaborazione responso diagnostico sulla finestra pre-convettiva tramite Groq...")
         responso = interpella_groq(report_dati, giorno_formattato)
         
         corpo_messaggio += f"📅 <b>Target: {giorno_formattato}</b>\n\n{responso}\n\n➖➖➖➖➖➖➖➖➖➖\n\n"
