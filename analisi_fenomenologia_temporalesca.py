@@ -2,7 +2,7 @@ import os
 import sys
 import math
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 from groq import Groq
 
 # Coordinate - Rivoli (TO)
@@ -26,6 +26,12 @@ def calcola_vettore_traslazione(u, v):
     direction_deg = (math.degrees(math.atan2(u, v)) + 360) % 360
     return speed_kmh, direction_deg
 
+def formatta_direzione_bussola(gradi):
+    """Converte l'angolo di traslazione in testo per evitare allucinazioni dell'AI."""
+    direzioni = ["Nord", "Nord-Est", "Est", "Sud-Est", "Sud", "Sud-Ovest", "Ovest", "Nord-Ovest"]
+    indice = round(gradi / 45) % 8
+    return direzioni[indice]
+
 def magnitudo_shear(u1, v1, u2, v2):
     """Calcola la magnitudo (m/s) della differenza vettoriale."""
     if None in (u1, v1, u2, v2):
@@ -35,8 +41,7 @@ def magnitudo_shear(u1, v1, u2, v2):
 def check_probabilita_precipitazione():
     """
     Controlla la probabilità di precipitazione massima GIORNALIERA per D2 e CH2.
-    Restituisce i giorni (oggi e/o domani) che superano le soglie:
-    >= 15% su almeno un modello, oppure >= 10% su entrambi.
+    Restituisce i giorni (oggi e/o domani) che superano le soglie.
     """
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
@@ -203,22 +208,15 @@ def main():
     FILE_LOCK = "lock_temporali.txt"
     oggi_str_formato_iso = datetime.now().strftime("%Y-%m-%d")
     
-    # 1. CONTROLLO SEMAFORO
     if os.path.exists(FILE_LOCK):
         with open(FILE_LOCK, "r") as f:
             if f.read().strip() == oggi_str_formato_iso:
                 print("✅ Analisi temporali già inviata oggi. Esecuzione terminata per evitare spam.")
                 sys.exit(0)
 
-    print("Ricerca inneschi: Analisi probabilità massime precipitazione giornaliera D2/CH2...")
     giorni_validi = check_probabilita_precipitazione()
-    
-    if not giorni_validi:
-        print("Analisi terminata: Nessuna probabilità di precipitazione rilevante nei prossimi giorni.")
-        return
+    if not giorni_validi: return
 
-    print(f"Giorni con potenziale innesco individuati: {giorni_validi}")
-    print("Scaricamento radiosondaggio predittivo completo 1000-200 hPa...")
     hourly = fetch_dati_termodinamici()
     hourly_ecmwf = fetch_ecmwf_pwat()
     
@@ -227,12 +225,10 @@ def main():
 
     for data_str in giorni_validi:
         indici_giorno = [i for i, t in enumerate(hourly['time']) if t.startswith(data_str)]
-        if not indici_giorno:
-            continue
+        if not indici_giorno: continue
             
         idx_picco = -1
         
-        # Scansioniamo cronologicamente la giornata: cerchiamo la PRIMA ora di innesco
         for i in indici_giorno:
             prob_d2 = hourly.get('precipitation_probability_dwd_icon_d2', [])
             prob_ch2 = hourly.get('precipitation_probability_meteoswiss_icon_ch2', [])
@@ -246,12 +242,9 @@ def main():
 
         if idx_picco == -1:
             idx_picco = [i for i in indici_giorno if hourly['time'][i].endswith("16:00")][0]
-            print(f"[{data_str}] Nessun innesco orario netto trovato, fallback alle 16:00.")
 
-        # CREAZIONE DELLA FINESTRA PRE-CONVETTIVA (Ambiente Vergine)
         indici_attivi = [idx for idx in range(idx_picco - 3, idx_picco + 1) if 0 <= idx < len(hourly['time'])]
         
-        # --- ESTRAZIONE DATI MASIVA NELLA FINESTRA PRE-CONVETTIVA ---
         max_cape = max_sicuro([hourly['cape_dwd_icon_d2'][i] for i in indici_attivi])
         max_updraft = max_sicuro([hourly['updraft_dwd_icon_d2'][i] for i in indici_attivi])
         max_fulmini = max_sicuro([hourly['lightning_potential_dwd_icon_d2'][i] for i in indici_attivi])
@@ -305,13 +298,22 @@ def main():
         u_500, v_500 = [], []
 
         for i in indici_attivi:
-            u, v = scomposizione_vettoriale(hourly['wind_speed_1000hPa_dwd_icon_d2'][i], hourly['wind_direction_1000hPa_dwd_icon_d2'][i])
+            w_speed_10 = hourly['wind_speed_1000hPa_dwd_icon_d2'][i] if hourly['wind_speed_1000hPa_dwd_icon_d2'][i] else 0
+            w_dir_10 = hourly['wind_direction_1000hPa_dwd_icon_d2'][i] if hourly['wind_direction_1000hPa_dwd_icon_d2'][i] else 0
+            w_speed_850 = hourly['wind_speed_850hPa_dwd_icon_d2'][i] if hourly['wind_speed_850hPa_dwd_icon_d2'][i] else 0
+            w_dir_850 = hourly['wind_direction_850hPa_dwd_icon_d2'][i] if hourly['wind_direction_850hPa_dwd_icon_d2'][i] else 0
+            w_speed_700 = hourly['wind_speed_700hPa_dwd_icon_d2'][i] if hourly['wind_speed_700hPa_dwd_icon_d2'][i] else 0
+            w_dir_700 = hourly['wind_direction_700hPa_dwd_icon_d2'][i] if hourly['wind_direction_700hPa_dwd_icon_d2'][i] else 0
+            w_speed_500 = hourly['wind_speed_500hPa_dwd_icon_d2'][i] if hourly['wind_speed_500hPa_dwd_icon_d2'][i] else 0
+            w_dir_500 = hourly['wind_direction_500hPa_dwd_icon_d2'][i] if hourly['wind_direction_500hPa_dwd_icon_d2'][i] else 0
+
+            u, v = scomposizione_vettoriale(w_speed_10, w_dir_10)
             u_10.append(u); v_10.append(v)
-            u, v = scomposizione_vettoriale(hourly['wind_speed_850hPa_dwd_icon_d2'][i], hourly['wind_direction_850hPa_dwd_icon_d2'][i])
+            u, v = scomposizione_vettoriale(w_speed_850, w_dir_850)
             u_850.append(u); v_850.append(v)
-            u, v = scomposizione_vettoriale(hourly['wind_speed_700hPa_dwd_icon_d2'][i], hourly['wind_direction_700hPa_dwd_icon_d2'][i])
+            u, v = scomposizione_vettoriale(w_speed_700, w_dir_700)
             u_700.append(u); v_700.append(v)
-            u, v = scomposizione_vettoriale(hourly['wind_speed_500hPa_dwd_icon_d2'][i], hourly['wind_direction_500hPa_dwd_icon_d2'][i])
+            u, v = scomposizione_vettoriale(w_speed_500, w_dir_500)
             u_500.append(u); v_500.append(v)
 
         avg_u10, avg_v10 = sum(u_10)/len(u_10), sum(v_10)/len(v_10)
@@ -359,7 +361,8 @@ def main():
         if dls is not None: report_lines.append(f"Deep Layer Shear (0-6 km): {dls:.1f} m/s")
         if lls is not None: report_lines.append(f"Low Level Shear (0-1 km): {lls:.1f} m/s")
         if trasl_kmh is not None and trasl_dir is not None:
-            report_lines.append(f"Vettore Traslazione: {trasl_kmh:.1f} km/h verso {trasl_dir:.0f}°")
+            dir_bussola = formatta_direzione_bussola(trasl_dir)
+            report_lines.append(f"Vettore Traslazione: {trasl_kmh:.1f} km/h verso {dir_bussola}")
             
         report_lines.append(f"\nANALISI ALGORITMICA SEVERITÀ:\nRischio Pioggia e Allagamenti: {stima_pioggia_tec}\nRischio Grandine: {stima_g}\nRischio Downburst: {stima_d}")
         
@@ -379,9 +382,9 @@ def main():
         corpo_messaggio = corpo_messaggio.rstrip("➖➖➖➖➖➖➖➖➖➖\n\n")
         
         if any(giorno > oggi_str_formato_iso for giorno in giorni_validi):
-            titolo = "🌩 <b>PRE-AVVISO: RADIOSONDAGGIO CONVETTIVO CONDIZIONALE</b>\n\n"
+            titolo = "🌩 <b>PRE-AVVISO</b>\n\n"
         else:
-            titolo = "🌩 <b>AVVISO: RADIOSONDAGGIO CONVETTIVO CONDIZIONALE</b>\n\n"
+            titolo = "🌩 <b>AVVISO</b>\n\n"
             
         messaggio_telegram = titolo + corpo_messaggio
         
