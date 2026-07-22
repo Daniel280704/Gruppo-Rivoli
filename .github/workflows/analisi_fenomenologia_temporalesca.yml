@@ -2,11 +2,11 @@ name: Analisi temporali approfondita
 
 on:
   schedule:
-    # Esegue al minuto 8 delle ore 7, 8, 9, 10, 11 (UTC)
+    # Esegue al minuto 8 delle ore 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 (UTC)
     # Da Marzo (3) a Ottobre (10)
     # Con l'ora legale italiana (UTC+2) corrisponde esattamente alle:
-    # 09:08, 10:08, 11:08, 12:08 e 13:08 locali.
-    - cron: '8 7-11 * 3-10 *'
+    # 09:08, 10:08, 11:08, 12:08, 13:08, 14:08, 15:08, 16:08, 17:08, 18:08, 19:08 e 20:08 locali.
+    - cron: '8 7-18 * 3-10 *'
   
   workflow_dispatch: # Permette l'avvio manuale dal sito
 
