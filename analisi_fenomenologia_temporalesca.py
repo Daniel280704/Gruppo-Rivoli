@@ -341,7 +341,7 @@ def main():
         print(f"[{giorno_formattato}] Elaborazione responso diagnostico sulla finestra pre-convettiva tramite Groq...")
         responso = interpella_groq(report_dati, giorno_formattato)
 
-        if responso and non responso.startswith("Errore AI Groq"):
+        if responso and not responso.startswith("Errore AI Groq"):
             responso = responso.replace("<", "&lt;").replace(">", "&gt;")
         
         corpo_messaggio += f"📅 <b>Target: {giorno_formattato}</b>\n\n{responso}\n\n➖➖➖➖➖➖➖➖➖➖\n\n"
