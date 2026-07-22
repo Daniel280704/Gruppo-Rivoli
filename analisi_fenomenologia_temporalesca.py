@@ -23,7 +23,6 @@ def calcola_vettore_traslazione(u, v):
     """Calcola la velocità (km/h) e la direzione VERSO CUI punta il vettore (gradi)."""
     speed_ms = math.sqrt(u**2 + v**2)
     speed_kmh = speed_ms * 3.6
-    # Usando atan2(u, v) otteniamo l'azimut bussola verso cui la massa d'aria si sposta
     direction_deg = (math.degrees(math.atan2(u, v)) + 360) % 360
     return speed_kmh, direction_deg
 
@@ -107,9 +106,6 @@ def min_sicuro(lista):
     valori_validi = [x for x in lista if x is not None]
     return min(valori_validi) if valori_validi else None
 
-def formatta_sicuro(valore, template="{:.1f}"):
-    return "N/D" if valore is None else template.format(valore)
-
 def stima_grandine(cape, updraft, dls, zero_termico, spessore_nube):
     cape = cape or 0
     updraft = updraft or 0
@@ -117,19 +113,19 @@ def stima_grandine(cape, updraft, dls, zero_termico, spessore_nube):
     spessore_nube = spessore_nube or 0
     
     if cape < 200 or spessore_nube < 3000:
-        return "Livello 0 - Assente (assenza di convezione profonda)"
+        return "Livello 0 su 5 - Assente (assenza di convezione profonda)"
     if updraft > 15 or cape > 2500 or (cape > 1500 and dls > 25):
-        return "Livello 5 - ESTREMA (> 5 cm). Fortissimi updraft, rischio mesociclone isolato, chicchi distruttivi."
+        return "Livello 5 su 5 - ESTREMA (> 5 cm). Fortissimi updraft, rischio mesociclone isolato, chicchi distruttivi."
     if updraft > 8 or cape > 1500 or (cape > 1000 and dls > 20):
-        return "Livello 4 - GROSSA (3 - 5 cm). Updraft intensi e sostenuti, probabili supercelle."
+        return "Livello 4 su 5 - GROSSA (3 - 5 cm). Updraft intensi e sostenuti, probabili supercelle."
     if updraft > 4 or cape > 800 or (cape > 500 and dls > 15):
-        return "Livello 3 - MEDIA (1.5 - 3 cm). Celle multicellulari ben organizzate, possibili accumuli al suolo."
+        return "Livello 3 su 5 - MEDIA (1.5 - 3 cm). Celle multicellulari ben organizzate, possibili accumuli al suolo."
     if updraft > 1.5 or cape > 400:
         if zero_termico is not None and zero_termico > 4000:
-            return "Livello 1 - GRAUPEL/FUSIONE. Fusione dei piccoli chicchi per via dello zero termico molto alto."
-        return "Livello 2 - PICCOLA (< 1.5 cm). Strutture a cella singola con rapido collasso precipitativo."
+            return "Livello 1 su 5 - GRAUPEL/FUSIONE. Fusione dei piccoli chicchi per via dello zero termico molto alto."
+        return "Livello 2 su 5 - PICCOLA (< 1.5 cm). Strutture a cella singola con rapido collasso precipitativo."
         
-    return "Livello 0 - Assente o trascurabile."
+    return "Livello 0 su 5 - Assente o trascurabile."
 
 def stima_downburst(rh_700, rh_500, lapse_rate, wind_gust, dls):
     rh_700 = rh_700 or 100
@@ -141,15 +137,15 @@ def stima_downburst(rh_700, rh_500, lapse_rate, wind_gust, dls):
     rh_medio_secco = (rh_700 + rh_500) / 2
 
     if rh_medio_secco < 40 and lapse_rate > 7.5 and wind_gust > 80:
-        return "Livello 5 - ESTREMO / MICROBURST. Aria secchissima in quota e gradienti violenti. Rischio venti distruttivi (> 100 km/h)."
+        return "Livello 5 su 5 - ESTREMO / MICROBURST. Aria secchissima in quota e gradienti violenti. Rischio venti distruttivi (> 100 km/h)."
     if rh_medio_secco < 50 and lapse_rate > 7.0 and wind_gust > 60:
-        return "Livello 4 - GRAVE. Forti raffiche discendenti (Dry Downburst) alimentate da rapida evaporazione. Venti > 80 km/h."
+        return "Livello 4 su 5 - GRAVE. Forti raffiche discendenti (Dry Downburst) alimentate da rapida evaporazione. Venti > 80 km/h."
     if wind_gust > 70 or (rh_medio_secco < 60 and lapse_rate > 6.5 and dls > 15):
-        return "Livello 3 - FORTE. Wet/Dry Downburst capaci di sradicamenti isolati o danni minori (< 80 km/h)."
+        return "Livello 3 su 5 - FORTE. Wet/Dry Downburst capaci di sradicamenti isolati o danni minori (< 80 km/h)."
     if wind_gust > 50 or lapse_rate > 6.0:
-        return "Livello 2 - MODERATO. Raffiche frontali di squall-line o outflow classico da temporale estivo (< 70 km/h)."
+        return "Livello 2 su 5 - MODERATO. Outflow classico da temporale estivo multicellulare (< 70 km/h)."
         
-    return "Livello 1 - DEBOLE. Outflow boundary ordinario, brezze rinfrescanti o raffiche non pericolose."
+    return "Livello 1 su 5 - DEBOLE. Outflow boundary ordinario, brezze rinfrescanti o raffiche non pericolose."
 
 def interpella_groq(report_tecnico, giorno_str):
     api_key = os.getenv("GROQ_API_KEY")
@@ -158,7 +154,7 @@ def interpella_groq(report_tecnico, giorno_str):
     client = Groq(api_key=api_key)
     
     prompt = f"""
-    Sei un meteorologo esperto in dinamiche convettive. Analizza il bollettino termodinamico approfondito per il {giorno_str} a Rivoli (TO).
+    Sei un meteorologo esperto in dinamiche convettive. Analizza il bollettino termodinamico per il {giorno_str} a Rivoli (TO).
     I dati derivano dalla colonna verticale 1000-200 hPa catturata nel momento di massimo vigore pre-convettivo.
 
     DATI ESTRATTI NELLA FASCIA ORARIA PRE-FRONTALE:
@@ -166,10 +162,10 @@ def interpella_groq(report_tecnico, giorno_str):
 
     REGOLE RIGOROSE:
     1. INNESCABILITÀ CONDIZIONATA: Ricorda sempre che il setup è potenziale. Usa frasi come "Qualora l'innesco avvenga...", "Se l'inibizione viene vinta...".
-    2. LINGUAGGIO SCIENTIFICO MA CHIARO: Sei rivolto a un pubblico appassionato. Intercetta la complessità della colonna atmosferica: cita il lapse rate tra 850-500 hPa per l'instabilità termica e tra 500-300 hPa per la divergenza in quota.
-    3. FENOMENOLOGIA E STIME: Giustifica le stime fornite dal modello per Grandine e Downburst usando i parametri. Per la grandine, DEVI esplicitare nel testo la dimensione stimata in centimetri fornita dai dati (es. "La grandine di Livello 4 (3 - 5 cm) è supportata da...").
-    4. CINEMATICA E SHEAR: Usa LLS (0-1 km) e DLS (0-6 km) per la struttura temporalesca (Cella singola, Multicella, potenziale Supercella). Usa il Vettore Traslazione per indicare chiaramente la direzione verso cui si sposterà il temporale.
-    5. Non superare i tre/quattro paragrafi ben strutturati e leggibili. Nessuna raccomandazione di protezione civile. DIVIETO ASSOLUTO DI FORMATTAZIONE HTML (non usare mai tag come <br>, <b>, <i> o simili).
+    2. LINGUAGGIO SCIENTIFICO: Intercetta la complessità della colonna atmosferica citando il lapse rate tra 850-500 hPa e tra 500-300 hPa per valutare l'instabilità termica.
+    3. FENOMENOLOGIA E STIME (CRITICO): Devi descrivere ESCLUSIVAMENTE il livello di rischio effettivo raggiunto (es. "Livello 2 su 5") e giustificarlo, senza MAI sprecare parole per ipotizzare i livelli superiori che non verranno raggiunti. Per la grandine, devi esplicitare sempre la dimensione stimata in centimetri.
+    4. CINEMATICA E SHEAR (CRITICO): Usa LLS (0-1 km) e DLS (0-6 km) per dedurre la struttura temporalesca. Limitati SOLAMENTE a queste diciture: Cella singola, Multicella o Supercella. È VIETATO usare termini come "squall line". Usa il Vettore Traslazione per indicare verso dove si sposterà la cella.
+    5. Non superare i tre/quattro paragrafi ben strutturati. Nessuna raccomandazione di protezione civile. DIVIETO ASSOLUTO DI FORMATTAZIONE HTML (non usare mai tag come <br>, <b>, <i> o simili).
     """
 
     try:
@@ -222,13 +218,11 @@ def main():
             p_d2 = prob_d2[i] if len(prob_d2) > i and prob_d2[i] is not None else 0
             p_ch2 = prob_ch2[i] if len(prob_ch2) > i and prob_ch2[i] is not None else 0
             
-            # Applichiamo la regola di innesco: 15% su almeno uno, oppure 10% su entrambi
             if (p_d2 >= 15 or p_ch2 >= 15) or (p_d2 >= 10 and p_ch2 >= 10):
                 idx_picco = i
                 break
 
         if idx_picco == -1:
-            # Fallback di sicurezza
             idx_picco = [i for i in indici_giorno if hourly['time'][i].endswith("16:00")][0]
             print(f"[{data_str}] Nessun innesco orario netto trovato, fallback alle 16:00.")
 
@@ -304,31 +298,41 @@ def main():
         v_cbl = (avg_v850 + avg_v700 + avg_v500) / 3
         trasl_kmh, trasl_dir = calcola_vettore_traslazione(u_cbl, v_cbl)
 
-        # Output Scaglioni Dedicati
         stima_g = stima_grandine(max_cape, max_updraft, dls, z_termico, spessore_nube)
         stima_d = stima_downburst(rh_700_spec, rh_500_spec, lr_basso, max_gust, dls)
 
         ora_inizio_finestra = datetime.fromisoformat(hourly['time'][indici_attivi[0]]).strftime('%H:%M')
         ora_fine_finestra = datetime.fromisoformat(hourly['time'][indici_attivi[-1]]).strftime('%H:%M')
 
-        report_dati = f"""
-        Finestra Inflow Pre-Convettivo analizzata: {ora_inizio_finestra} - {ora_fine_finestra} (Innesco atteso attorno alle {ora_fine_finestra})
-        Max CAPE: {formatta_sicuro(max_cape, "{:.0f}")} J/kg
-        Max Updraft: {formatta_sicuro(max_updraft, "{:.1f}")} m/s
-        Lightning Potential Index: {formatta_sicuro(max_fulmini, "{:.1f}")}
-        LCL (Base Nubi Medio): {formatta_sicuro(lcl_medio, "{:.0f}")} m
-        Spessore Nube Convettiva (Max Estensione): {formatta_sicuro(spessore_nube, "{:.0f}")} m
-        Lapse Rate Basso Massimo (850-500 hPa): {formatta_sicuro(lr_basso, "{:.1f}")} °C/km
-        Lapse Rate Alto Massimo (500-300 hPa): {formatta_sicuro(lr_alto, "{:.1f}")} °C/km
-        Umidità Layer (Bassa/Media/Alta): {formatta_sicuro(rh_low, "{:.0f}")}% / {formatta_sicuro(rh_mid, "{:.0f}")}% / {formatta_sicuro(rh_high, "{:.0f}")}%
-        Deep Layer Shear (0-6 km): {formatta_sicuro(dls, "{:.1f}")} m/s
-        Low Level Shear (0-1 km): {formatta_sicuro(lls, "{:.1f}")} m/s
-        Vettore Traslazione: {formatta_sicuro(trasl_kmh, "{:.1f}")} km/h verso {formatta_sicuro(trasl_dir, "{:.0f}")}°
+        # Costruzione dinamica del report: ignora i valori nulli o a 0 per non confondere Groq
+        report_lines = [
+            f"Finestra Inflow Pre-Convettivo analizzata: {ora_inizio_finestra} - {ora_fine_finestra} (Innesco atteso attorno alle {ora_fine_finestra})"
+        ]
         
-        ANALISI ALGORITMICA SEVERITÀ:
-        Rischio Grandine: {stima_g}
-        Rischio Downburst: {stima_d}
-        """
+        if max_cape and max_cape > 0: 
+            report_lines.append(f"Max CAPE: {max_cape:.0f} J/kg")
+        if max_updraft and max_updraft > 0: 
+            report_lines.append(f"Max Updraft: {max_updraft:.1f} m/s")
+        if max_fulmini and max_fulmini > 0: 
+            report_lines.append(f"Lightning Potential Index: {max_fulmini:.1f}")
+        if lcl_medio and lcl_medio > 0: 
+            report_lines.append(f"LCL (Base Nubi Medio): {lcl_medio:.0f} m")
+        if spessore_nube and spessore_nube > 0: 
+            report_lines.append(f"Spessore Nube Convettiva (Max Estensione): {spessore_nube:.0f} m")
+            
+        if lr_basso is not None: report_lines.append(f"Lapse Rate Basso Massimo (850-500 hPa): {lr_basso:.1f} °C/km")
+        if lr_alto is not None: report_lines.append(f"Lapse Rate Alto Massimo (500-300 hPa): {lr_alto:.1f} °C/km")
+        if rh_low is not None and rh_mid is not None and rh_high is not None:
+            report_lines.append(f"Umidità Layer (Bassa/Media/Alta): {rh_low:.0f}% / {rh_mid:.0f}% / {rh_high:.0f}%")
+            
+        if dls is not None: report_lines.append(f"Deep Layer Shear (0-6 km): {dls:.1f} m/s")
+        if lls is not None: report_lines.append(f"Low Level Shear (0-1 km): {lls:.1f} m/s")
+        if trasl_kmh is not None and trasl_dir is not None:
+            report_lines.append(f"Vettore Traslazione: {trasl_kmh:.1f} km/h verso {trasl_dir:.0f}°")
+            
+        report_lines.append(f"\nANALISI ALGORITMICA SEVERITÀ:\nRischio Grandine: {stima_g}\nRischio Downburst: {stima_d}")
+        
+        report_dati = "\n".join(report_lines)
         
         giorno_formattato = datetime.strptime(data_str, "%Y-%m-%d").strftime("%d/%m/%Y")
         print(f"[{giorno_formattato}] Elaborazione responso diagnostico sulla finestra pre-convettiva tramite Groq...")
