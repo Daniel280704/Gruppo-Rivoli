@@ -10,7 +10,7 @@ LAT = 45.0734521841099
 LON = 7.543386286825349
 
 def scomposizione_vettoriale(speed_kmh, direction_deg):
-    """Converte velocità e direzione in vettori U e V (m/s)."""
+    """Converte velocità e direzione di provenienza in vettori U e V (m/s)."""
     if speed_kmh is None or direction_deg is None:
         return 0.0, 0.0
     speed_ms = speed_kmh / 3.6
@@ -19,11 +19,12 @@ def scomposizione_vettoriale(speed_kmh, direction_deg):
     v = -speed_ms * math.cos(rad)
     return u, v
 
-def calcola_magnitudo_direzione(u, v):
-    """Riconverte i vettori U e V in velocità (km/h) e direzione (gradi)."""
+def calcola_vettore_traslazione(u, v):
+    """Calcola la velocità (km/h) e la direzione VERSO CUI punta il vettore (gradi)."""
     speed_ms = math.sqrt(u**2 + v**2)
     speed_kmh = speed_ms * 3.6
-    direction_deg = (math.degrees(math.atan2(-u, -v)) + 360) % 360
+    # Usando atan2(u, v) otteniamo l'azimut bussola verso cui la massa d'aria si sposta
+    direction_deg = (math.degrees(math.atan2(u, v)) + 360) % 360
     return speed_kmh, direction_deg
 
 def magnitudo_shear(u1, v1, u2, v2):
@@ -71,11 +72,11 @@ def check_probabilita_precipitazione():
         print(f"⚠️ Errore nel download Probabilità Precipitazione: {e}")
         return []
 
-def fetch_dati_certosini_d2():
+def fetch_dati_termodinamici():
     """Scarica la colonna termodinamica avanzata (ICON-D2) e la probabilità oraria di entrambi i modelli."""
     url = "https://api.open-meteo.com/v1/forecast"
     hourly_params = (
-        "precipitation_probability," # Aggiunto per ricavare l'ora di picco
+        "precipitation_probability," 
         "temperature_2m,relative_humidity_2m,dew_point_2m,wind_gusts_10m,lightning_potential,updraft,convective_cloud_base,convective_cloud_top,cape,freezing_level_height,"
         "temperature_1000hPa,temperature_975hPa,temperature_950hPa,temperature_925hPa,temperature_900hPa,temperature_850hPa,temperature_800hPa,temperature_700hPa,temperature_600hPa,temperature_500hPa,temperature_400hPa,temperature_300hPa,temperature_250hPa,temperature_200hPa,"
         "relative_humidity_1000hPa,relative_humidity_975hPa,relative_humidity_950hPa,relative_humidity_925hPa,relative_humidity_900hPa,relative_humidity_850hPa,relative_humidity_800hPa,relative_humidity_700hPa,relative_humidity_600hPa,relative_humidity_500hPa,relative_humidity_400hPa,relative_humidity_300hPa,relative_humidity_250hPa,relative_humidity_200hPa,"
@@ -86,7 +87,7 @@ def fetch_dati_certosini_d2():
     
     params = {
         "latitude": LAT, "longitude": LON, 
-        "models": "dwd_icon_d2,meteoswiss_icon_ch2", # Richiedo entrambi per incrociarli
+        "models": "dwd_icon_d2,meteoswiss_icon_ch2", 
         "hourly": hourly_params,
         "timezone": "Europe/Rome", "forecast_days": 3
     }
@@ -109,7 +110,7 @@ def min_sicuro(lista):
 def formatta_sicuro(valore, template="{:.1f}"):
     return "N/D" if valore is None else template.format(valore)
 
-def stima_grandine_certosina(cape, updraft, dls, zero_termico, spessore_nube):
+def stima_grandine(cape, updraft, dls, zero_termico, spessore_nube):
     cape = cape or 0
     updraft = updraft or 0
     dls = dls or 0
@@ -130,7 +131,7 @@ def stima_grandine_certosina(cape, updraft, dls, zero_termico, spessore_nube):
         
     return "Livello 0 - Assente o trascurabile."
 
-def stima_downburst_certosina(rh_700, rh_500, lapse_rate, wind_gust, dls):
+def stima_downburst(rh_700, rh_500, lapse_rate, wind_gust, dls):
     rh_700 = rh_700 or 100
     rh_500 = rh_500 or 100
     lapse_rate = lapse_rate or 5.0
@@ -157,17 +158,17 @@ def interpella_groq(report_tecnico, giorno_str):
     client = Groq(api_key=api_key)
     
     prompt = f"""
-    Sei un meteorologo esperto in dinamiche convettive. Analizza il bollettino termodinamico "certosino" per il {giorno_str} a Rivoli (TO).
-    I dati derivano dalla colonna verticale 1000-200hPa catturata nel momento di massimo vigore pre-convettivo.
+    Sei un meteorologo esperto in dinamiche convettive. Analizza il bollettino termodinamico approfondito per il {giorno_str} a Rivoli (TO).
+    I dati derivano dalla colonna verticale 1000-200 hPa catturata nel momento di massimo vigore pre-convettivo.
 
     DATI ESTRATTI NELLA FASCIA ORARIA PRE-FRONTALE:
     {report_tecnico}
 
     REGOLE RIGOROSE:
     1. INNESCABILITÀ CONDIZIONATA: Ricorda sempre che il setup è potenziale. Usa frasi come "Qualora l'innesco avvenga...", "Se l'inibizione viene vinta...".
-    2. LINGUAGGIO SCIENTIFICO MA CHIARO: Sei rivolto a un pubblico appassionato. Intercetta la complessità della colonna atmosferica: cita il lapse rate tra 850-500hPa per l'instabilità termica e tra 500-300hPa per la divergenza in quota.
-    3. FENOMENOLOGIA: Giustifica le stime di Grandine e Downburst fornite dal modello usando i parametri (es. "La grandine di Livello 4 è supportata dai violenti updraft e dal CAPE elevato", "Il forte rischio downburst è dettato dalla secchezza a 700hPa").
-    4. CINEMATICA E SHEAR: Usa LLS (0-1km) e DLS (0-6km) per la struttura temporalesca (Cella singola, Multicella, potenziale Supercella). Usa il Vettore Traslazione per ipotizzare l'evoluzione temporale e stazionarietà.
+    2. LINGUAGGIO SCIENTIFICO MA CHIARO: Sei rivolto a un pubblico appassionato. Intercetta la complessità della colonna atmosferica: cita il lapse rate tra 850-500 hPa per l'instabilità termica e tra 500-300 hPa per la divergenza in quota.
+    3. FENOMENOLOGIA E STIME: Giustifica le stime fornite dal modello per Grandine e Downburst usando i parametri. Per la grandine, DEVI esplicitare nel testo la dimensione stimata in centimetri fornita dai dati (es. "La grandine di Livello 4 (3 - 5 cm) è supportata da...").
+    4. CINEMATICA E SHEAR: Usa LLS (0-1 km) e DLS (0-6 km) per la struttura temporalesca (Cella singola, Multicella, potenziale Supercella). Usa il Vettore Traslazione per indicare chiaramente la direzione verso cui si sposterà il temporale.
     5. Non superare i tre/quattro paragrafi ben strutturati e leggibili. Nessuna raccomandazione di protezione civile. DIVIETO ASSOLUTO DI FORMATTAZIONE HTML (non usare mai tag come <br>, <b>, <i> o simili).
     """
 
@@ -200,8 +201,8 @@ def main():
         return
 
     print(f"Giorni con potenziale innesco individuati: {giorni_validi}")
-    print("Scaricamento radiosondaggio predittivo completo 1000-200hPa...")
-    hourly = fetch_dati_certosini_d2()
+    print("Scaricamento radiosondaggio predittivo completo 1000-200 hPa...")
+    hourly = fetch_dati_termodinamici()
     
     corpo_messaggio = ""
     inviato_almeno_uno = False
@@ -224,38 +225,32 @@ def main():
             # Applichiamo la regola di innesco: 15% su almeno uno, oppure 10% su entrambi
             if (p_d2 >= 15 or p_ch2 >= 15) or (p_d2 >= 10 and p_ch2 >= 10):
                 idx_picco = i
-                break # <-- FONDAMENTALE: Trovata la prima ora utile, fermiamo il ciclo!
+                break
 
         if idx_picco == -1:
-            # Fallback di sicurezza: se la prob. giornaliera era alta ma le singole ore
-            # non arrivano a soglia, analizza d'ufficio il cuore dell'instabilità diurna.
+            # Fallback di sicurezza
             idx_picco = [i for i in indici_giorno if hourly['time'][i].endswith("16:00")][0]
             print(f"[{data_str}] Nessun innesco orario netto trovato, fallback alle 16:00.")
 
         # CREAZIONE DELLA FINESTRA PRE-CONVETTIVA (Ambiente Vergine)
-        # Prende la primissima ora utile trovata e le 3 ore immediatamente precedenti
         indici_attivi = [idx for idx in range(idx_picco - 3, idx_picco + 1) if 0 <= idx < len(hourly['time'])]
         
-        # --- ESTRAZIONE DATI MASIVA NELLA FINESTRA PRE-CONVETTIVA (Scenario Peggiore) ---
-        # Si cerca il "max" assoluto di ogni variabile distruttiva
+        # --- ESTRAZIONE DATI MASIVA NELLA FINESTRA PRE-CONVETTIVA ---
         max_cape = max_sicuro([hourly['cape_dwd_icon_d2'][i] for i in indici_attivi])
         max_updraft = max_sicuro([hourly['updraft_dwd_icon_d2'][i] for i in indici_attivi])
         max_fulmini = max_sicuro([hourly['lightning_potential_dwd_icon_d2'][i] for i in indici_attivi])
         max_gust = max_sicuro([hourly['wind_gusts_10m_dwd_icon_d2'][i] for i in indici_attivi])
         
-        # Geometria nube (Spessore calcolato sul minimo della base e massimo del top nella finestra)
         min_base = min_sicuro([hourly['convective_cloud_base_dwd_icon_d2'][i] for i in indici_attivi])
         max_top = max_sicuro([hourly['convective_cloud_top_dwd_icon_d2'][i] for i in indici_attivi])
         spessore_nube = (max_top - min_base) if min_base is not None and max_top is not None else None
 
         z_termico = media_sicura([hourly['freezing_level_height_dwd_icon_d2'][i] for i in indici_attivi])
         
-        # LCL calcolato sull'istante di massime temperature per simulare la partenza del moto convettivo
         t2m_max = max_sicuro([hourly['temperature_2m_dwd_icon_d2'][i] for i in indici_attivi])
         tdew_max = max_sicuro([hourly['dew_point_2m_dwd_icon_d2'][i] for i in indici_attivi])
         lcl_medio = 125 * (t2m_max - tdew_max) if t2m_max and tdew_max else None
 
-        # Gradienti Termici (Lapse Rates) - Scelgo il più ripido (maggiore = più instabile)
         lrs_850_500 = []
         lrs_500_300 = []
         for i in indici_attivi:
@@ -274,7 +269,6 @@ def main():
         lr_basso = max_sicuro(lrs_850_500)
         lr_alto = max_sicuro(lrs_500_300)
 
-        # Umidità Media del Layer
         rh_low = media_sicura([hourly[f'relative_humidity_{p}hPa_dwd_icon_d2'][i] for p in [1000, 925, 850] for i in indici_attivi])
         rh_mid = media_sicura([hourly[f'relative_humidity_{p}hPa_dwd_icon_d2'][i] for p in [700, 600, 500] for i in indici_attivi])
         rh_high = media_sicura([hourly[f'relative_humidity_{p}hPa_dwd_icon_d2'][i] for p in [400, 300, 200] for i in indici_attivi])
@@ -282,7 +276,6 @@ def main():
         rh_700_spec = min_sicuro([hourly['relative_humidity_700hPa_dwd_icon_d2'][i] for i in indici_attivi])
         rh_500_spec = min_sicuro([hourly['relative_humidity_500hPa_dwd_icon_d2'][i] for i in indici_attivi])
 
-        # Vettori vento per calcolo Shear (media sulla finestra per avere il profilo dinamico stabile)
         u_10, v_10 = [], []
         u_850, v_850 = [], []
         u_700, v_700 = [], []
@@ -306,14 +299,14 @@ def main():
         lls = magnitudo_shear(avg_u10, avg_v10, avg_u850, avg_v850)
         dls = magnitudo_shear(avg_u10, avg_v10, avg_u500, avg_v500)
         
-        # Steering Flow: Media vettoriale 850-700-500hPa
+        # Steering Flow: Media vettoriale 850-700-500 hPa per calcolare lo spostamento
         u_cbl = (avg_u850 + avg_u700 + avg_u500) / 3
         v_cbl = (avg_v850 + avg_v700 + avg_v500) / 3
-        trasl_kmh, trasl_dir = calcola_magnitudo_direzione(u_cbl, v_cbl)
+        trasl_kmh, trasl_dir = calcola_vettore_traslazione(u_cbl, v_cbl)
 
         # Output Scaglioni Dedicati
-        stima_g = stima_grandine_certosina(max_cape, max_updraft, dls, z_termico, spessore_nube)
-        stima_d = stima_downburst_certosina(rh_700_spec, rh_500_spec, lr_basso, max_gust, dls)
+        stima_g = stima_grandine(max_cape, max_updraft, dls, z_termico, spessore_nube)
+        stima_d = stima_downburst(rh_700_spec, rh_500_spec, lr_basso, max_gust, dls)
 
         ora_inizio_finestra = datetime.fromisoformat(hourly['time'][indici_attivi[0]]).strftime('%H:%M')
         ora_fine_finestra = datetime.fromisoformat(hourly['time'][indici_attivi[-1]]).strftime('%H:%M')
@@ -325,11 +318,11 @@ def main():
         Lightning Potential Index: {formatta_sicuro(max_fulmini, "{:.1f}")}
         LCL (Base Nubi Medio): {formatta_sicuro(lcl_medio, "{:.0f}")} m
         Spessore Nube Convettiva (Max Estensione): {formatta_sicuro(spessore_nube, "{:.0f}")} m
-        Lapse Rate Basso Massimo (850-500hPa): {formatta_sicuro(lr_basso, "{:.1f}")} °C/km
-        Lapse Rate Alto Massimo (500-300hPa): {formatta_sicuro(lr_alto, "{:.1f}")} °C/km
+        Lapse Rate Basso Massimo (850-500 hPa): {formatta_sicuro(lr_basso, "{:.1f}")} °C/km
+        Lapse Rate Alto Massimo (500-300 hPa): {formatta_sicuro(lr_alto, "{:.1f}")} °C/km
         Umidità Layer (Bassa/Media/Alta): {formatta_sicuro(rh_low, "{:.0f}")}% / {formatta_sicuro(rh_mid, "{:.0f}")}% / {formatta_sicuro(rh_high, "{:.0f}")}%
-        Deep Layer Shear (0-6km): {formatta_sicuro(dls, "{:.1f}")} m/s
-        Low Level Shear (0-1km): {formatta_sicuro(lls, "{:.1f}")} m/s
+        Deep Layer Shear (0-6 km): {formatta_sicuro(dls, "{:.1f}")} m/s
+        Low Level Shear (0-1 km): {formatta_sicuro(lls, "{:.1f}")} m/s
         Vettore Traslazione: {formatta_sicuro(trasl_kmh, "{:.1f}")} km/h verso {formatta_sicuro(trasl_dir, "{:.0f}")}°
         
         ANALISI ALGORITMICA SEVERITÀ:
