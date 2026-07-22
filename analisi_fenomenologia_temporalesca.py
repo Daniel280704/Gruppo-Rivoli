@@ -164,8 +164,7 @@ def interpella_groq(report_tecnico, giorno_str):
     1. INNESCABILITÀ CONDIZIONATA: Ricorda sempre che il setup è potenziale. Usa frasi come "Qualora l'innesco avvenga...", "Se l'inibizione viene vinta...".
     2. LINGUAGGIO SCIENTIFICO: Intercetta la complessità della colonna atmosferica citando il lapse rate tra 850-500 hPa e tra 500-300 hPa per valutare l'instabilità termica.
     3. FENOMENOLOGIA E STIME (CRITICO): Devi descrivere ESCLUSIVAMENTE il livello di rischio effettivo raggiunto (es. "Livello 2 su 5") e giustificarlo, senza MAI sprecare parole per ipotizzare i livelli superiori che non verranno raggiunti. Per la grandine, devi esplicitare sempre la dimensione stimata in centimetri.
-    4. CINEMATICA E SHEAR (CRITICO): Usa LLS (0-1 km) e DLS (0-6 km) per dedurre la struttura temporalesca. Limitati SOLAMENTE a queste diciture: Cella singola, Multicella o Supercella. È VIETATO usare termini come "squall line". Usa il Vettore Traslazione per indicare verso dove si sposterà la cella.
-    5. Non superare i tre/quattro paragrafi ben strutturati. Nessuna raccomandazione di protezione civile. DIVIETO ASSOLUTO DI FORMATTAZIONE HTML (non usare mai tag come <br>, <b>, <i> o simili).
+    4. CINEMATICA E SHEAR (CRITICO): Usa LLS (0-1 km) e DLS (0-6 km) per dedurre la struttura temporalesca. Limitati SOLAMENTE a queste diciture: Cella singola, Multicella o Supercella. È VIETATO usare espressioni ripetitive come "cella multicellulare" o termini come "squall line". Usa il Vettore Traslazione per indicare verso dove si sposterà il temporale.
     """
 
     try:
